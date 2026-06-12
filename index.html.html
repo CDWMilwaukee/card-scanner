@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brewers Card Scanner — Arbitrage Finder</title>
+<style>
+  :root {
+    --navy: #12284B; --gold: #FFC52F; --bg: #f5f6f8; --card: #fff;
+    --green: #1a7f37; --red: #b42318; --muted: #667085;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         margin: 0; background: var(--bg); color: #1d2433; }
+  header { background: var(--navy); color: #fff; padding: 14px 16px; display: flex;
+           align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header h1 span { color: var(--gold); }
+  .container { max-width: 1100px; margin: 0 auto; padding: 12px; }
+  .panel { background: var(--card); border-radius: 10px; padding: 14px;
+           margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .panel h2 { font-size: 14px; margin: 0 0 10px; text-transform: uppercase;
+              letter-spacing: .5px; color: var(--muted); }
+  input, select, button, textarea { font-size: 15px; padding: 9px 12px; border-radius: 8px;
+            border: 1px solid #d0d5dd; }
+  button { background: var(--navy); color: #fff; border: none; cursor: pointer; font-weight: 600; }
+  button.secondary { background: #e8ebf0; color: var(--navy); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: #eef2f8;
+          border-radius: 999px; padding: 5px 12px; font-size: 13px; }
+  .chip b { color: var(--navy); }
+  .chip button { background: none; color: var(--red); padding: 0 2px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #eef0f3; vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .4px; }
+  .price { font-weight: 700; white-space: nowrap; }
+  .disc-good { color: var(--green); font-weight: 700; }
+  .disc-bad { color: var(--muted); }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px;
+         border-radius: 4px; margin-right: 4px; }
+  .tag.auto { background: #fff3cd; color: #8a6d00; }
+  .tag.num  { background: #e0ecff; color: #1849a9; }
+  .tag.arb  { background: #d1fadf; color: var(--green); }
+  .tag.auct { background: #fde2e2; color: var(--red); }
+  .tag.graded { background: #ede9fe; color: #5b21b6; }
+  .small { font-size: 12px; color: var(--muted); }
+  a { color: #1849a9; text-decoration: none; }
+  .status { font-size: 13px; color: var(--muted); margin: 6px 0; }
+  .filters label { font-size: 13px; display: inline-flex; align-items: center; gap: 5px; margin-right: 12px; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--navy); }
+  .fmv-input { width: 80px; padding: 4px 6px; font-size: 13px; }
+  @media (max-width: 640px) {
+    th:nth-child(5), td:nth-child(5) { display: none; } /* hide seller col on phone */
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚾ Brewers Card Scanner <span>· Arbitrage Finder</span></h1>
+  <div class="small" style="color:#cdd5e0" id="lastScan"></div>
+</header>
+
+<div class="container">
+
+  <!-- CONFIG -->
+  <div class="panel">
+    <details id="configDetails">
+      <summary>⚙️ Setup — Worker URL</summary>
+      <div class="row" style="margin-top:10px">
+        <input id="workerUrl" placeholder="https://card-scanner.YOURNAME.workers.dev" style="flex:1; min-width:260px">
+        <button onclick="saveConfig()">Save</button>
+      </div>
+      <p class="small">Deploy worker.js to Cloudflare (same as CDW Estimator), add your eBay
+      Client ID + Secret as worker secrets, paste the worker URL here. Stored locally on this device.</p>
+    </details>
+  </div>
+
+  <!-- WATCHLIST -->
+  <div class="panel">
+    <h2>Watchlist</h2>
+    <div class="row" style="margin-bottom:8px">
+      <input id="newPlayer" placeholder="Player name (e.g. Jacob Misiorowski)" style="flex:1; min-width:200px">
+      <input id="newKeywords" placeholder="Extra keywords (optional)" style="flex:1; min-width:160px">
+      <select id="newGroup"><option>Prospects</option><option>Roster</option></select>
+      <button onclick="addPlayer()">Add</button>
+      <button class="secondary" onclick="restoreDefaults()">↺ Restore Full Brewers List</button>
+    </div>
+    <div id="watchlist"></div>
+  </div>
+
+  <!-- SCAN CONTROLS -->
+  <div class="panel">
+    <h2>Scan</h2>
+    <div class="row filters" style="margin-bottom:10px">
+      <label><input type="checkbox" id="fNumbered" checked> Numbered only</label>
+      <label><input type="checkbox" id="fAutosOk" checked> Include autos</label>
+      <label><input type="checkbox" id="fChrome"> Chrome only</label>
+      <label><input type="checkbox" id="fRaw" checked> Exclude graded</label>
+      <label>Max print run <select id="fMaxPrint">
+        <option value="9999">Any</option><option value="499">/499</option>
+        <option value="199">/199</option><option value="99" selected>/99</option>
+        <option value="50">/50</option><option value="25">/25</option>
+      </select></label>
+      <label>Max price $<input id="fMaxPrice" type="number" value="150" style="width:70px; padding:4px"></label>
+      <label>Type <select id="fBuying">
+        <option value="ALL">All</option>
+        <option value="FIXED_PRICE" selected>BIN / Best Offer</option>
+        <option value="AUCTION">Auctions</option>
+      </select></label>
+    </div>
+    <div class="row">
+      <select id="scanGroup">
+        <option value="ALL">Scan: All (~45 players, ~90 sec)</option>
+        <option value="Prospects">Scan: Prospects only</option>
+        <option value="Roster">Scan: MLB Roster only</option>
+      </select>
+      <button id="scanBtn" onclick="scanAll()">🔍 Scan</button>
+      <input id="oneOff" placeholder="…or one-off search (e.g. Sal Frelick auto /25)" style="flex:1; min-width:220px">
+      <button class="secondary" onclick="scanOneOff()">Search</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <!-- RESULTS: ARBITRAGE -->
+  <div class="panel">
+    <h2>🎯 Same-Card Arbitrage (identical card, multiple listings)</h2>
+    <p class="small">Cards where 2+ listings of the same player/parallel/print-run exist and the cheapest
+    is meaningfully below the next ask. The market is literally disagreeing with itself.</p>
+    <div id="arbResults"><p class="small">Run a scan.</p></div>
+  </div>
+
+  <!-- RESULTS: FMV DISCOUNTS -->
+  <div class="panel">
+    <h2>💰 Best Value vs FMV</h2>
+    <p class="small">Listings ranked by discount to your FMV table. Set FMV inline — it saves automatically.
+    No FMV set = ranked by cheapest-in-group instead.</p>
+    <div id="fmvResults"><p class="small">Run a scan.</p></div>
+  </div>
+
+  <!-- FMV TABLE -->
+  <div class="panel">
+    <details>
+      <summary>📒 FMV Table (your price book — editable)</summary>
+      <div id="fmvTable" style="margin-top:10px"></div>
+    </details>
+  </div>
+
+</div>
+
+<script>
+/* ============ STATE ============ */
+const DEFAULT_WATCHLIST = [
+  // ===== TOP 30 PROSPECTS (MLB Pipeline 2026) =====
+  { player: "Jesus Made", keywords: "bowman", group: "Prospects" },
+  { player: "Luis Pena", keywords: "brewers bowman", group: "Prospects" },
+  { player: "Jett Williams", keywords: "", group: "Prospects" },
+  { player: "Cooper Pratt", keywords: "", group: "Prospects" },
+  { player: "Brandon Sproat", keywords: "", group: "Prospects" },
+  { player: "Andrew Fischer", keywords: "bowman", group: "Prospects" },
+  { player: "Logan Henderson", keywords: "brewers", group: "Prospects" },
+  { player: "Jeferson Quero", keywords: "", group: "Prospects" },
+  { player: "Bishop Letson", keywords: "", group: "Prospects" },
+  { player: "Marco Dinges", keywords: "", group: "Prospects" },
+  { player: "Josh Adamczewski", keywords: "", group: "Prospects" },
+  { player: "Luis Lara", keywords: "brewers", group: "Prospects" },
+  { player: "Luke Adams", keywords: "brewers", group: "Prospects" },
+  { player: "Braylon Payne", keywords: "", group: "Prospects" },
+  { player: "Brady Ebel", keywords: "", group: "Prospects" },
+  { player: "JD Thompson", keywords: "brewers", group: "Prospects" },
+  { player: "Tyson Hardin", keywords: "", group: "Prospects" },
+  { player: "Brock Wilken", keywords: "", group: "Prospects" },
+  { player: "Diego Frontado", keywords: "", group: "Prospects" },
+  { player: "Shane Drohan", keywords: "", group: "Prospects" },
+  { player: "Coleman Crow", keywords: "", group: "Prospects" },
+  { player: "Craig Yoho", keywords: "", group: "Prospects" },
+  { player: "Josh Knoth", keywords: "", group: "Prospects" },
+  { player: "Eric Bitonti", keywords: "", group: "Prospects" },
+  { player: "Frank Cairone", keywords: "", group: "Prospects" },
+  { player: "Blake Burke", keywords: "brewers", group: "Prospects" },
+  { player: "Handelfry Encarnacion", keywords: "bowman", group: "Prospects" },
+  // ===== MLB ROSTER (lineup + rotation) =====
+  { player: "William Contreras", keywords: "", group: "Roster" },
+  { player: "Andrew Vaughn", keywords: "", group: "Roster" },
+  { player: "Brice Turang", keywords: "", group: "Roster" },
+  { player: "Joey Ortiz", keywords: "brewers", group: "Roster" },
+  { player: "Christian Yelich", keywords: "", group: "Roster" },
+  { player: "Jackson Chourio", keywords: "", group: "Roster" },
+  { player: "Sal Frelick", keywords: "", group: "Roster" },
+  { player: "Garrett Mitchell", keywords: "", group: "Roster" },
+  { player: "Jake Bauers", keywords: "", group: "Roster" },
+  { player: "Jacob Misiorowski", keywords: "", group: "Roster" },
+  { player: "Kyle Harrison", keywords: "brewers", group: "Roster" },
+  { player: "Chad Patrick", keywords: "", group: "Roster" },
+  { player: "Robert Gasser", keywords: "", group: "Roster" },
+  { player: "Quinn Priester", keywords: "", group: "Roster" },
+  { player: "Brandon Woodruff", keywords: "", group: "Roster" },
+];
+let watchlist = load("cs_watchlist", DEFAULT_WATCHLIST);
+// migrate old saved lists that lack group tags
+watchlist = watchlist.map(w => ({ group: "Prospects", ...w }));
+let fmvBook = load("cs_fmv", {});   // { cardKey: dollars }
+let lastItems = [];
+
+function load(k, d){ try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }
+function save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+
+/* ============ CONFIG ============ */
+const workerUrlEl = document.getElementById("workerUrl");
+workerUrlEl.value = localStorage.getItem("cs_worker") || "";
+if (!workerUrlEl.value) document.getElementById("configDetails").open = true;
+function saveConfig(){
+  localStorage.setItem("cs_worker", workerUrlEl.value.trim().replace(/\/$/,""));
+  document.getElementById("configDetails").open = false;
+  setStatus("Worker URL saved.");
+}
+
+/* ============ WATCHLIST UI ============ */
+function renderWatchlist(){
+  const el = document.getElementById("watchlist");
+  const groups = ["Prospects","Roster"];
+  el.innerHTML = groups.map(g => {
+    const members = watchlist.map((w,i)=>({...w,i})).filter(w => w.group === g);
+    if (!members.length) return "";
+    return `<div class="small" style="margin:8px 0 4px"><b>${g}</b> (${members.length})</div>` +
+      members.map(w =>
+        `<span class="chip"><b>${esc(w.player)}</b>${w.keywords?` <span class="small">${esc(w.keywords)}</span>`:""}
+         <button onclick="removePlayer(${w.i})">✕</button></span>`).join(" ");
+  }).join("");
+}
+function addPlayer(){
+  const p = document.getElementById("newPlayer").value.trim();
+  if (!p) return;
+  watchlist.push({ player: p,
+    keywords: document.getElementById("newKeywords").value.trim(),
+    group: document.getElementById("newGroup").value });
+  save("cs_watchlist", watchlist);
+  document.getElementById("newPlayer").value = "";
+  document.getElementById("newKeywords").value = "";
+  renderWatchlist();
+}
+function restoreDefaults(){
+  if (!confirm("Replace your current watchlist with the full Brewers list (top 30 prospects + MLB roster)? Custom additions will be removed.")) return;
+  watchlist = JSON.parse(JSON.stringify(DEFAULT_WATCHLIST));
+  save("cs_watchlist", watchlist);
+  renderWatchlist();
+}
+function removePlayer(i){
+  watchlist.splice(i,1); save("cs_watchlist", watchlist); renderWatchlist();
+}
+renderWatchlist();
+
+/* ============ TITLE PARSER ============ */
+// The heart of the tool: turn a messy eBay title into a structured card identity.
+const PARALLELS = [
+  "superfractor","red wave","rose gold","black rose gold","gold wave","orange wave","blue wave",
+  "aqua wave","green wave","purple wave","sapphire","red refractor","orange refractor",
+  "gold refractor","green refractor","blue refractor","purple refractor","aqua refractor",
+  "black refractor","x-fractor","xfractor","mojo","lava","raywave","ray wave","shimmer",
+  "speckle","crackle","geometric","reptilian","logofractor","atomic","prism","scintillate",
+  "lazer","lasers","mini diamond","mega box","sterling","true blue","fuchsia","magenta",
+  "yellow","orange","red","blue","green","purple","aqua","teal","gold","black","pink","white"
+];
+const PRODUCTS = [
+  "bowman chrome sapphire","bowman sterling","bowman chrome","bowman draft","bowman's best",
+  "bowmans best","topps chrome update","topps chrome black","topps chrome","topps finest",
+  "finest","topps sterling","topps tribute","tribute","topps inception","inception",
+  "topps update","topps heritage","heritage","stadium club chrome","stadium club",
+  "topps gold label","gold label","topps pristine","pristine","topps five star","five star",
+  "topps luminaries","luminaries","topps archives","archives","topps series","topps"
+];
+
+function parseTitle(rawTitle){
+  const t = " " + rawTitle.toLowerCase().replace(/[\u2013\u2014]/g,"-") + " ";
+  const out = { raw: rawTitle, auto: false, printRun: null, serial: null,
+                parallel: null, product: null, graded: null, chrome: false, lot: false };
+
+  // graded?
+  const g = t.match(/\b(psa|bgs|sgc|cgc)\s*(10|9\.5|9|8\.5|8|7)\b/);
+  if (g) out.graded = (g[1] + " " + g[2]).toUpperCase();
+
+  // lot?
+  if (/\blot\b|\bx\d+\b.*cards|\(\d+\)\s*cards/.test(t)) out.lot = true;
+
+  // auto?
+  if (/\bauto\b|\bautograph\b|\bsigned\b|\bau\b/.test(t)) out.auto = true;
+
+  // serial / print run: "12/99", "#/99", "/99", "1 of 25", "23 of 75"
+  let m = t.match(/\b(\d{1,3})\s*\/\s*(\d{1,4})\b/);   // 12/99
+  if (m && +m[2] >= +m[1] && +m[2] <= 2999) { out.serial = m[1]+"/"+m[2]; out.printRun = +m[2]; }
+  if (!out.printRun) {
+    m = t.match(/(?:^|[\s#])\/\s*(\d{1,4})\b/);         // /99
+    if (m && +m[1] <= 2999) out.printRun = +m[1];
+  }
+  if (!out.printRun) {
+    m = t.match(/\b(\d{1,3})\s+of\s+(\d{1,4})\b/);      // 23 of 75
+    if (m && +m[2] <= 2999) { out.serial = m[1]+"/"+m[2]; out.printRun = +m[2]; }
+  }
+
+  // product (longest match first — list is ordered)
+  for (const p of PRODUCTS) { if (t.includes(" "+p+" ") || t.includes(" "+p)) { out.product = p; break; } }
+  out.chrome = /chrome|finest|sterling|sapphire|refractor|pristine/.test(t);
+
+  // parallel (longest/most specific first — list is ordered)
+  for (const p of PARALLELS) { if (t.includes(p)) { out.parallel = p; break; } }
+
+  return out;
+}
+
+// Card identity key for grouping "same card" listings
+function cardKey(player, parsed){
+  return [
+    player.toLowerCase(),
+    parsed.product || "?",
+    parsed.parallel || "base",
+    parsed.printRun ? "/"+parsed.printRun : "unnumbered",
+    parsed.auto ? "auto" : "noauto",
+    parsed.graded ? parsed.graded : "raw",
+  ].join(" | ");
+}
+
+/* ============ SCANNING ============ */
+function setStatus(s){ document.getElementById("status").textContent = s; }
+
+async function fetchListings(query){
+  const base = localStorage.getItem("cs_worker");
+  if (!base) { setStatus("⚠️ Set your Worker URL in Setup first."); throw new Error("no worker"); }
+  const params = new URLSearchParams({
+    q: query,
+    limit: "200",
+    buyingOptions: document.getElementById("fBuying").value,
+  });
+  const maxPrice = document.getElementById("fMaxPrice").value;
+  if (maxPrice) params.set("maxPrice", maxPrice);
+  const resp = await fetch(`${base}/search?${params}`);
+  const data = await resp.json();
+  if (data.error) throw new Error(JSON.stringify(data.error));
+  return data.items || [];
+}
+
+async function scanAll(){
+  const btn = document.getElementById("scanBtn");
+  btn.disabled = true;
+  lastItems = [];
+  const groupSel = document.getElementById("scanGroup").value;
+  const targets = groupSel === "ALL" ? watchlist : watchlist.filter(w => w.group === groupSel);
+  try {
+    for (let i = 0; i < targets.length; i++) {
+      const w = targets[i];
+      setStatus(`Scanning ${i+1}/${targets.length}: ${w.player}…`);
+      const q = [w.player, w.keywords, "auto OR refractor OR chrome"].filter(Boolean).join(" ");
+      try {
+        const items = await fetchListings(q);
+        for (const it of items) {
+          // require the player's last name in the title to cut noise
+          const lastName = w.player.trim().split(/\s+/).slice(-1)[0].toLowerCase();
+          if (!it.title.toLowerCase().includes(lastName)) continue;
+          lastItems.push({ ...it, player: w.player, parsed: parseTitle(it.title) });
+        }
+      } catch(e) { console.warn("scan error", w.player, e); }
+      await new Promise(r => setTimeout(r, 250)); // be polite to rate limits
+    }
+    document.getElementById("lastScan").textContent =
+      "Last scan: " + new Date().toLocaleTimeString();
+    processResults();
+    setStatus(`Done — ${lastItems.length} listings pulled across ${targets.length} players.`);
+  } finally { btn.disabled = false; }
+}
+
+async function scanOneOff(){
+  const q = document.getElementById("oneOff").value.trim();
+  if (!q) return;
+  setStatus(`Searching: ${q}…`);
+  lastItems = [];
+  const items = await fetchListings(q);
+  const player = q.split(/\s+/).slice(0,2).join(" ");
+  for (const it of items) lastItems.push({ ...it, player, parsed: parseTitle(it.title) });
+  processResults();
+  setStatus(`Done — ${lastItems.length} listings.`);
+}
+
+/* ============ ANALYSIS ============ */
+function applyFilters(items){
+  const numbered = document.getElementById("fNumbered").checked;
+  const autosOk  = document.getElementById("fAutosOk").checked;
+  const chromeOnly = document.getElementById("fChrome").checked;
+  const rawOnly  = document.getElementById("fRaw").checked;
+  const maxPrint = +document.getElementById("fMaxPrint").value;
+  return items.filter(it => {
+    const p = it.parsed;
+    if (p.lot) return false;
+    if (numbered && !p.printRun && !p.auto) return false;   // framework: numbered OR auto
+    if (!autosOk && p.auto) return false;
+    if (chromeOnly && !p.chrome) return false;
+    if (rawOnly && p.graded) return false;
+    if (p.printRun && p.printRun > maxPrint) return false;
+    if (it.price == null) return false;
+    return true;
+  });
+}
+
+function totalCost(it){ return it.price + (it.shipping || 0); }
+
+function processResults(){
+  const items = applyFilters(lastItems);
+
+  // group by card identity
+  const groups = {};
+  for (const it of items) {
+    const key = cardKey(it.player, it.parsed);
+    (groups[key] = groups[key] || []).push(it);
+  }
+
+  /* --- Same-card arbitrage --- */
+  const arb = [];
+  for (const [key, list] of Object.entries(groups)) {
+    if (list.length < 2) continue;
+    const sorted = [...list].sort((a,b) => totalCost(a) - totalCost(b));
+    const cheapest = sorted[0], next = sorted[1];
+    const gap = (totalCost(next) - totalCost(cheapest)) / totalCost(next);
+    if (gap >= 0.12 && totalCost(cheapest) >= 3) {   // 12%+ gap, ignore sub-$3 junk
+      arb.push({ key, cheapest, next, gap, count: list.length });
+    }
+  }
+  arb.sort((a,b) => b.gap - a.gap);
+  renderArb(arb);
+
+  /* --- FMV discount ranking --- */
+  const deals = [];
+  for (const [key, list] of Object.entries(groups)) {
+    const cheapest = [...list].sort((a,b)=>totalCost(a)-totalCost(b))[0];
+    const fmv = fmvBook[key];
+    if (fmv && fmv > 0) {
+      const disc = (fmv - totalCost(cheapest)) / fmv;
+      deals.push({ key, item: cheapest, fmv, disc });
+    }
+  }
+  deals.sort((a,b) => b.disc - a.disc);
+  renderFmv(deals.filter(d => d.disc > 0));
+  renderFmvTable(groups);
+}
+
+/* ============ RENDER ============ */
+function tagRow(p){
+  let h = "";
+  if (p.auto) h += `<span class="tag auto">AUTO</span>`;
+  if (p.printRun) h += `<span class="tag num">/${p.printRun}</span>`;
+  if (p.graded) h += `<span class="tag graded">${p.graded}</span>`;
+  return h;
+}
+function itemRow(it, extra=""){
+  const auction = it.buyingOptions.includes("AUCTION");
+  return `<tr>
+    <td>${it.image?`<img src="${it.image}" width="44" style="border-radius:4px">`:""}</td>
+    <td>${tagRow(it.parsed)}<a href="${it.url}" target="_blank">${esc(it.title)}</a>
+        ${auction?`<span class="tag auct">AUCTION${it.bidCount!=null?" · "+it.bidCount+" bids":""}</span>`:""}
+        <div class="small">${esc(it.parsed.product||"")} ${esc(it.parsed.parallel||"")}</div></td>
+    <td class="price">$${totalCost(it).toFixed(2)}<div class="small">${it.shipping?`incl $${it.shipping.toFixed(2)} ship`:"free ship"}</div></td>
+    ${extra}
+    <td class="small">${esc(it.seller||"")}${it.feedbackPct?` · ${it.feedbackPct}%`:""}</td>
+  </tr>`;
+}
+
+function renderArb(arb){
+  const el = document.getElementById("arbResults");
+  if (!arb.length) { el.innerHTML = `<p class="small">No same-card gaps ≥12% found in this scan.</p>`; return; }
+  el.innerHTML = `<table><tr><th></th><th>Card / Cheapest Listing</th><th>Price</th><th>Next Ask</th><th>Seller</th></tr>` +
+    arb.slice(0,25).map(a =>
+      itemRow(a.cheapest, `<td><span class="disc-good">${(a.gap*100).toFixed(0)}% below</span>
+        <div class="small">next: $${totalCost(a.next).toFixed(2)} · ${a.count} listed</div></td>`)
+    ).join("") + "</table>";
+}
+
+function renderFmv(deals){
+  const el = document.getElementById("fmvResults");
+  if (!deals.length) { el.innerHTML = `<p class="small">No listings below FMV yet — set FMVs in the price book below, then rescan.</p>`; return; }
+  el.innerHTML = `<table><tr><th></th><th>Card / Listing</th><th>Price</th><th>vs FMV</th><th>Seller</th></tr>` +
+    deals.slice(0,25).map(d =>
+      itemRow(d.item, `<td><span class="disc-good">${(d.disc*100).toFixed(0)}% below</span>
+        <div class="small">FMV $${d.fmv}</div></td>`)
+    ).join("") + "</table>";
+}
+
+function renderFmvTable(groups){
+  const el = document.getElementById("fmvTable");
+  const keys = Object.keys(groups).sort();
+  if (!keys.length) { el.innerHTML = `<p class="small">Scan first — card identities will appear here for FMV entry.</p>`; return; }
+  el.innerHTML = `<table><tr><th>Card Identity</th><th>Listings</th><th>Lowest Ask</th><th>Your FMV $</th></tr>` +
+    keys.map(k => {
+      const list = groups[k];
+      const low = Math.min(...list.map(totalCost));
+      return `<tr><td class="small">${esc(k)}</td><td>${list.length}</td>
+        <td class="price">$${low.toFixed(2)}</td>
+        <td><input class="fmv-input" type="number" value="${fmvBook[k]??""}"
+             onchange="setFmv('${k.replace(/'/g,"\\'")}', this.value)"></td></tr>`;
+    }).join("") + "</table>";
+}
+function setFmv(key, val){
+  if (val === "" || +val <= 0) delete fmvBook[key]; else fmvBook[key] = +val;
+  save("cs_fmv", fmvBook);
+  processResults();
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+</script>
+</body>
+</html>
