@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brewers Card Scanner — Arbitrage Finder</title>
+<style>
+  :root {
+    --navy: #12284B; --gold: #FFC52F; --bg: #f5f6f8; --card: #fff;
+    --green: #1a7f37; --red: #b42318; --muted: #667085;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         margin: 0; background: var(--bg); color: #1d2433; }
+  header { background: var(--navy); color: #fff; padding: 14px 16px; display: flex;
+           align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header h1 span { color: var(--gold); }
+  .container { max-width: 1100px; margin: 0 auto; padding: 12px; }
+  .panel { background: var(--card); border-radius: 10px; padding: 14px;
+           margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .panel h2 { font-size: 14px; margin: 0 0 10px; text-transform: uppercase;
+              letter-spacing: .5px; color: var(--muted); }
+  input, select, button, textarea { font-size: 15px; padding: 9px 12px; border-radius: 8px;
+            border: 1px solid #d0d5dd; }
+  button { background: var(--navy); color: #fff; border: none; cursor: pointer; font-weight: 600; }
+  button.secondary { background: #e8ebf0; color: var(--navy); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: #eef2f8;
+          border-radius: 999px; padding: 5px 12px; font-size: 13px; }
+  .chip b { color: var(--navy); }
+  .chip button { background: none; color: var(--red); padding: 0 2px; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #eef0f3; vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; color: var(--muted); letter-spacing: .4px; }
+  .price { font-weight: 700; white-space: nowrap; }
+  .disc-good { color: var(--green); font-weight: 700; }
+  .disc-bad { color: var(--muted); }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px;
+         border-radius: 4px; margin-right: 4px; }
+  .tag.auto { background: #fff3cd; color: #8a6d00; }
+  .tag.num  { background: #e0ecff; color: #1849a9; }
+  .tag.arb  { background: #d1fadf; color: var(--green); }
+  .tag.auct { background: #fde2e2; color: var(--red); }
+  .tag.graded { background: #ede9fe; color: #5b21b6; }
+  .small { font-size: 12px; color: var(--muted); }
+  a { color: #1849a9; text-decoration: none; }
+  .status { font-size: 13px; color: var(--muted); margin: 6px 0; }
+  .filters label { font-size: 13px; display: inline-flex; align-items: center; gap: 5px; margin-right: 12px; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--navy); }
+  .fmv-input { width: 80px; padding: 4px 6px; font-size: 13px; }
+  /* ---- player intel (brain) ---- */
+  .intel { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 5px; align-items: center; font-size: 11px; line-height: 1.4; }
+  .intel .team { background: #e8f5e9; color: #1a7f37; border-radius: 4px; padding: 1px 6px; font-weight: 700; }
+  .intel .alert { background: #fde2e2; color: #b42318; border-radius: 4px; padding: 1px 6px; font-weight: 700; }
+  .posture { border-radius: 4px; padding: 1px 6px; font-weight: 700; white-space: nowrap; }
+  .p-hold  { background: #e0ecff; color: #1849a9; }
+  .p-buy   { background: #d1fadf; color: #1a7f37; }
+  .p-value { background: #eef0f3; color: #667085; }
+  /* ---- tilt badges ---- */
+  .tiltbadge { display:inline-block; border-radius:4px; padding:1px 7px; font-weight:700; font-size:12px; white-space:nowrap; }
+  .tilt-up   { background:#d1fadf; color:#1a7f37; }
+  .tilt-down { background:#fde2e2; color:#b42318; }
+  .tilt-flat { background:#eef0f3; color:#667085; }
+  /* ---- intel review cards ---- */
+  .intel-card { border:1px solid #e3e7ee; border-radius:8px; padding:10px; margin-bottom:8px; background:#fcfdff; }
+  .intel-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+  .intel-head .arrow { font-weight:700; }
+  .intel-head .arrow.tilt-up { color:#1a7f37; }
+  .intel-head .arrow.tilt-down { color:#b42318; }
+  .intel-drivers { display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .drv { font-size:12px; padding:3px 8px; border-radius:5px; }
+  .drv.tilt-up { background:#eafaf0; color:#1a6e32; }
+  .drv.tilt-down { background:#fdeeee; color:#a01f16; }
+  .drv.tilt-flat { background:#f1f3f6; color:#555; }
+  .intel-actions { display:flex; gap:8px; }
+  .intel-actions button { padding:6px 14px; font-size:13px; }
+  .intel-actions { flex-wrap:wrap; align-items:center; }
+  .override { font-size:12px; color:#555; display:inline-flex; align-items:center; gap:5px; }
+  .ovr-input { width:64px; padding:4px 6px; font-size:13px; }
+  .p-sell  { background: #fde2e2; color: #b42318; }
+  .p-flier { background: #f3edff; color: #7c3aed; }
+  .p-avoid { background: #b42318; color: #fff; }
+  .intel .note { color: #667085; }
+  .deal { border-radius: 4px; padding: 1px 6px; font-weight: 700; font-size: 11px; white-space: nowrap; }
+  .d-strong { background: #1a7f37; color: #fff; }
+  .d-good   { background: #d1fadf; color: #1a7f37; }
+  .d-fair   { background: #eef0f3; color: #667085; }
+  .d-over   { background: #fde2e2; color: #b42318; }
+  .trend { border-radius: 4px; padding: 1px 5px; font-weight: 700; font-size: 11px; white-space: nowrap; }
+  .trend.up   { background: #d1fadf; color: #1a7f37; }
+  .trend.down { background: #fde2e2; color: #b42318; }
+  .trend.flat { background: #eef0f3; color: #667085; }
+  .brain-table td { font-size: 12px; }
+  .brain-table .note { color: #667085; font-size: 11px; }
+  @media (max-width: 640px) {
+    th:nth-child(5), td:nth-child(5) { display: none; } /* hide seller col on phone */
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚾ Brewers Card Scanner <span>· Arbitrage Finder</span></h1>
+  <div class="small" style="color:#cdd5e0" id="lastScan"></div>
+</header>
+
+<div class="container">
+
+  <!-- CONFIG -->
+  <div class="panel">
+    <details id="configDetails">
+      <summary>⚙️ Setup — Worker URL</summary>
+      <div class="row" style="margin-top:10px">
+        <input id="workerUrl" placeholder="https://card-scanner.YOURNAME.workers.dev" style="flex:1; min-width:260px">
+        <button onclick="saveConfig()">Save</button>
+      </div>
+      <p class="small">Deploy worker.js to Cloudflare (same as CDW Estimator), add your eBay
+      Client ID + Secret as worker secrets, paste the worker URL here. Stored locally on this device.</p>
+    </details>
+  </div>
+
+  <!-- WATCHLIST -->
+  <div class="panel">
+    <h2>Watchlist</h2>
+    <div class="row" style="margin-bottom:8px">
+      <input id="newPlayer" placeholder="Player name (e.g. Jacob Misiorowski)" style="flex:1; min-width:200px">
+      <input id="newKeywords" placeholder="Extra keywords (optional)" style="flex:1; min-width:160px">
+      <select id="newGroup"><option>Prospects</option><option>Roster</option></select>
+      <button onclick="addPlayer()">Add</button>
+      <button class="secondary" onclick="restoreDefaults()">↺ Restore Full Brewers List</button>
+    </div>
+    <div id="watchlist"></div>
+  </div>
+
+  <!-- SCAN CONTROLS -->
+  <div class="panel">
+    <h2>Scan</h2>
+    <div class="row filters" style="margin-bottom:10px">
+      <label><input type="checkbox" id="fNumbered" checked> Numbered only</label>
+      <label><input type="checkbox" id="fAutosOk" checked> Include autos</label>
+      <label><input type="checkbox" id="fChrome"> Chrome only</label>
+      <label><input type="checkbox" id="fRaw" checked> Exclude graded</label>
+      <label>Max print run <select id="fMaxPrint">
+        <option value="9999">Any</option><option value="499">/499</option>
+        <option value="199">/199</option><option value="99" selected>/99</option>
+        <option value="50">/50</option><option value="25">/25</option>
+      </select></label>
+      <label>Max price $<input id="fMaxPrice" type="number" value="150" style="width:70px; padding:4px"></label>
+      <label>Type <select id="fBuying">
+        <option value="ALL">All</option>
+        <option value="FIXED_PRICE" selected>BIN / Best Offer</option>
+        <option value="AUCTION">Auctions</option>
+      </select></label>
+    </div>
+    <div class="row">
+      <select id="scanGroup">
+        <option value="ALL">Scan: All (~45 players, ~90 sec)</option>
+        <option value="Prospects">Scan: Prospects only</option>
+        <option value="Roster">Scan: MLB Roster only</option>
+      </select>
+      <button id="scanBtn" onclick="scanAll()">🔍 Scan</button>
+      <input id="oneOff" placeholder="…or one-off search (e.g. Sal Frelick auto /25)" style="flex:1; min-width:220px">
+      <button class="secondary" onclick="scanOneOff()">Search</button>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <!-- RESULTS: STRONG BUYS -->
+  <div class="panel">
+    <h2>🎯 Strong Buys — below market</h2>
+    <p class="small">Licensed cards where the cheapest listing sits below where the rest of that exact
+    card's market sits (median of all its active listings, or your override FMV). Ranked by discount
+    × player tier, so an ace floats above a filler at the same discount.</p>
+    <div id="arbResults"><p class="small">Run a scan.</p></div>
+  </div>
+
+  <!-- RESULTS: ON THE RADAR -->
+  <div class="panel">
+    <h2>👀 On the Radar — fairly priced / thin market</h2>
+    <p class="small">Higher-tier players that are <i>available</i> but priced at/near market (not a steal),
+    plus thin-market cards (&lt;3 listings) where the median isn't reliable and a manual FMV would help.</p>
+    <div id="fmvResults"><p class="small">Run a scan.</p></div>
+  </div>
+
+  <!-- TRENDS -->
+  <div class="panel">
+    <h2>🧠 Intel — live stats / Statcast / news → tilt suggestions</h2>
+    <div class="row" style="margin-bottom:8px">
+      <button id="intelBtn" onclick="refreshIntel()">🔄 Refresh Intel</button>
+      <span id="intelStatus" class="small">Pulls everything since your last refresh, then proposes tilt changes for your review.</span>
+    </div>
+    <div id="intelPanel"><p class="small">No suggestions yet. Click “Refresh Intel” to pull the latest stats, Statcast & news.</p></div>
+  </div>
+
+  <div class="panel">
+    <h2>📈 Trends — price movement over time</h2>
+    <p class="small">Builds automatically as you re-scan. Median price per card is saved each scan (this device only);
+    movement shows vs ~7 days ago, rolled up by player and by print-run tier.
+    <a href="#" onclick="clearHistory();return false;">clear history</a></p>
+    <div id="trendPanel"><p class="small">Run scans over multiple days to build trends.</p></div>
+  </div>
+
+  <!-- FMV TABLE -->
+  <div class="panel">
+    <details>
+      <summary>📒 FMV Table (your price book — editable)</summary>
+      <div id="fmvTable" style="margin-top:10px"></div>
+    </details>
+  </div>
+
+  <!-- PLAYER BRAIN -->
+  <div class="panel">
+    <details>
+      <summary>🧠 Player Brain (current team · tier · posture — analyst intel)</summary>
+      <p class="small" style="margin:8px 0">Static dossiers baked in. <b>Current team is the source of truth</b> — the team printed on a card is ignored. Refresh the hot names periodically.</p>
+      <div id="brainPanel" style="margin-top:6px"></div>
+    </details>
+  </div>
+
+</div>
+
+<script>
+/* ============ STATE ============ */
+const DEFAULT_WATCHLIST = [
+  // ===== TOP 30 PROSPECTS (MLB Pipeline 2026) =====
+  { player: "Jesus Made", keywords: "bowman", group: "Prospects" },
+  { player: "Luis Pena", keywords: "brewers bowman", group: "Prospects" },
+  { player: "Jett Williams", keywords: "", group: "Prospects" },
+  { player: "Cooper Pratt", keywords: "", group: "Prospects" },
+  { player: "Brandon Sproat", keywords: "", group: "Prospects" },
+  { player: "Andrew Fischer", keywords: "bowman", group: "Prospects" },
+  { player: "Logan Henderson", keywords: "brewers", group: "Prospects" },
+  { player: "Jeferson Quero", keywords: "", group: "Prospects" },
+  { player: "Bishop Letson", keywords: "", group: "Prospects" },
+  { player: "Marco Dinges", keywords: "", group: "Prospects" },
+  { player: "Josh Adamczewski", keywords: "", group: "Prospects" },
+  { player: "Luis Lara", keywords: "brewers", group: "Prospects" },
+  { player: "Luke Adams", keywords: "brewers", group: "Prospects" },
+  { player: "Braylon Payne", keywords: "", group: "Prospects" },
+  { player: "Brady Ebel", keywords: "", group: "Prospects" },
+  { player: "JD Thompson", keywords: "brewers", group: "Prospects" },
+  { player: "Tyson Hardin", keywords: "", group: "Prospects" },
+  { player: "Brock Wilken", keywords: "", group: "Prospects" },
+  { player: "Diego Frontado", keywords: "", group: "Prospects" },
+  { player: "Shane Drohan", keywords: "", group: "Prospects" },
+  { player: "Coleman Crow", keywords: "", group: "Prospects" },
+  { player: "Craig Yoho", keywords: "", group: "Prospects" },
+  { player: "Josh Knoth", keywords: "", group: "Prospects" },
+  { player: "Eric Bitonti", keywords: "", group: "Prospects" },
+  { player: "Frank Cairone", keywords: "", group: "Prospects" },
+  { player: "Blake Burke", keywords: "brewers", group: "Prospects" },
+  { player: "Handelfry Encarnacion", keywords: "bowman", group: "Prospects" },
+  // ===== MLB ROSTER (lineup + rotation) =====
+  { player: "William Contreras", keywords: "", group: "Roster" },
+  { player: "Andrew Vaughn", keywords: "", group: "Roster" },
+  { player: "Brice Turang", keywords: "", group: "Roster" },
+  { player: "Joey Ortiz", keywords: "brewers", group: "Roster" },
+  { player: "Christian Yelich", keywords: "", group: "Roster" },
+  { player: "Jackson Chourio", keywords: "", group: "Roster" },
+  { player: "Sal Frelick", keywords: "", group: "Roster" },
+  { player: "Garrett Mitchell", keywords: "", group: "Roster" },
+  { player: "Jake Bauers", keywords: "", group: "Roster" },
+  { player: "Jacob Misiorowski", keywords: "", group: "Roster" },
+  { player: "Kyle Harrison", keywords: "brewers", group: "Roster" },
+  { player: "Chad Patrick", keywords: "", group: "Roster" },
+  { player: "Robert Gasser", keywords: "", group: "Roster" },
+  { player: "Quinn Priester", keywords: "", group: "Roster" },
+  { player: "Brandon Woodruff", keywords: "", group: "Roster" },
+];
+let watchlist = load("cs_watchlist", DEFAULT_WATCHLIST);
+// migrate old saved lists that lack group tags
+watchlist = watchlist.map(w => ({ group: "Prospects", ...w }));
+let fmvBook = load("cs_fmv", {});   // { cardKey: dollars }
+let history = load("cs_history", {}); // { cardKey: [ {d, med, low, n}, ... ] } — price trend over time
+let tiltOverride = load("cs_tiltOverride", {});   // { "player name": {tilt, note, ts} } — accepted intel changes persist here
+let intelLog = load("cs_intelLog", {});           // { "player name": [ {ts, tilt, drivers[]} ] } — conviction history over time
+let lastIntelPull = localStorage.getItem("cs_lastIntelPull") || "";
+let lastItems = [];
+
+function load(k, d){ try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } }
+function save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
+
+/* ============ PLAYER BRAIN (Tier-1 static intelligence) ============ */
+/* current_team is the source of truth; cardTeams = teams a card may PICTURE (ignore them).
+   posture codes: HOLD∞ | HOLD | BUY | VALUE | SELL | FLIER | AVOID  */
+const PLAYER_BRAIN = {
+  // ----- MLB ROSTER -----
+  "jackson chourio":   { team:"Brewers", tier:"Cornerstone", traj:"↑", posture:"HOLD∞", tilt:1.45, note:"Cornerstone — never sell into a slump; edge is same-card arbitrage, not mispricing. 21yo, 40+ HR ceiling, club control through 2033." },
+  "jacob misiorowski": { team:"Brewers", tier:"Emerging Ace", traj:"↑", posture:"HOLD∞", tilt:1.50, note:"🔥 1.34 ERA (1st MLB), .151 opp avg (lowest), 103.7mph fastest pitch on record. Don't chase the spike; refresh FMV weekly. Hold /25 & rarer." },
+  "kyle harrison":     { team:"Brewers", cardTeams:["Giants"], tier:"Breakout SP", traj:"↑", posture:"BUY", tilt:1.40, note:"BUY-SIGNAL: cards say Giants + pre-breakout pricing; real breakout (1.57 ERA), repricing lag." },
+  "brandon woodruff":  { team:"Brewers", tier:"Vet Ace (rehab)", traj:"⚕", posture:"HOLD", tilt:1.10, note:"Comeback bet — spikes on a good return start, craters on a setback. Watch the return." },
+  "quinn priester":    { team:"Brewers", tier:"Mid SP (injured)", traj:"⚕", posture:"AVOID", tilt:0.55, note:"Season in jeopardy (thoracic outlet) + FIP regression — cheap fliers only." },
+  "robert gasser":     { team:"Brewers", tier:"Depth SP", traj:"→", posture:"FLIER", tilt:0.70, note:"TJ-return depth; autos at deep discount only." },
+  "chad patrick":      { team:"Brewers", tier:"Depth", traj:"→", posture:"FLIER", tilt:0.65, note:"Minimal card market — cheap org fliers only." },
+  "william contreras": { team:"Brewers", tier:"Star C", traj:"→", posture:"HOLD", tilt:1.15, note:"Elite catcher in his prime; stable floor, slow steady appreciation. 2x AS, 2x SS, WS '21." },
+  "christian yelich":  { team:"Brewers", tier:"HOF-Legacy", traj:"↓", posture:"HOLD", tilt:0.90, note:"Legacy autos (MVP '18, 2x batting champ) hold; bat fading at 34 — don't chase modern high-print." },
+  "brice turang":      { team:"Brewers", tier:"Regular ↑", traj:"↑", posture:"BUY", tilt:1.25, note:"Two-way value trending up (GG '24, All-MLB 2nd '25); often underpriced — good discount target." },
+  "joey ortiz":        { team:"Brewers", tier:"Glove SS", traj:"↓", posture:"VALUE", tilt:0.80, note:"Bat struggling + Pratt call-up pushes him to 3B timeshare; defense-driven cap — cheap autos only." },
+  "garrett mitchell":  { team:"Brewers", tier:"Toolsy/Risk", traj:"?", posture:"FLIER", tilt:0.85, note:"Elite tools but injury-capped — cheap upside bets only, don't over-allocate." },
+  "andrew vaughn":     { team:"Brewers", cardTeams:["White Sox"], tier:"Regular", traj:"→", posture:"VALUE", tilt:0.80, note:"Cards say White Sox; .428 wOBA is a mirage (3.7% barrel, regression flag) — don't pay up." },
+  "sal frelick":       { team:"Brewers", tier:"Regular", traj:"→", posture:"VALUE", tilt:0.95, note:"GG '24; low power ceiling caps card ceiling, but high exit-velo/xwOBA hints at upside — discount or skip." },
+  "jake bauers":       { team:"Brewers", tier:"Momentum", traj:"🔥", posture:"SELL", tilt:0.60, note:"Ride & EXIT — age-30 breakout, regression base case; TRIM high-print non-autos, don't accumulate." },
+  "luis rengifo":      { team:"Brewers", tier:"Utility (cold)", traj:"↓", posture:"AVOID", tilt:0.60, note:".205/.280/.254 in 2026 — DFA candidate with Pratt up. Minimal card market; pass." },
+  "gary sanchez":      { team:"Brewers", tier:"Backup C", traj:"→", posture:"FLIER", tilt:0.75, note:"Veteran backup catcher; legacy-name liquidity only — cheap." },
+  // ----- PROSPECTS -----
+  "jesus made":        { team:"Brewers", tier:"Elite (top-5)", traj:"↑", posture:"HOLD∞", tilt:1.45, note:"Crown jewel; autos $290–1650, mostly above your cap — use sniper-search. /25 & rarer hold-forever." },
+  "luis pena":         { team:"Brewers", tier:"Elite #2", traj:"⚕", posture:"CAUTION", tilt:0.95, note:"HEALTH FLAG: collapsed/hospitalized in April, saw a neurologist — don't accumulate hard until cleared." },
+  "handelfry encarnacion": { team:"Brewers", tier:"Priority Flier ↑", traj:"↑", posture:"BUY", tilt:1.45, note:"BUY AGGRESSIVELY — Carolina League POW, 5 HR/mo, 105mph EV; target 1st Bowman autos tighter than /299." },
+  "jett williams":     { team:"Brewers", cardTeams:["Mets"], tier:"Elite #3", traj:"↑", posture:"BUY", tilt:1.35, note:"Cards say Mets — repricing lag + rank jump; target 1st Bowman autos. Debut is the catalyst." },
+  "brandon sproat":    { team:"Brewers", cardTeams:["Mets"], tier:"High #5–6", traj:"↑", posture:"BUY", tilt:1.30, note:"Cards say Mets — lag opportunity; opening-day rotation, elite K-rate; keep print-run discipline." },
+  "cooper pratt":      { team:"Brewers", tier:"High #4 — DEBUT", traj:"🔥", posture:"BUY", tilt:1.38, note:"EVENT 6/16: MLB DEBUT today vs CLE, batting 8th, named everyday SS. Murphy: 'shortstop of the future.' 8yr/$50.75M extension. Catalyst is LIVE — buy 1st Bowman autos before repricing." },
+  "andrew fischer":    { team:"Brewers", tier:"High #6", traj:"↑", posture:"BUY", tilt:1.20, note:"Ranked #1 3B prospect in baseball — but prior bust-risk flag; don't overpay the hype." },
+  "logan henderson":   { team:"Brewers", tier:"Near-MLB arm", traj:"⚕", posture:"BUY", tilt:1.20, note:"On IL (back, ~July return); 2.23 ERA, elite K — debut is the catalyst — buy ahead at a discount." },
+  "jeferson quero":    { team:"Brewers", tier:"C (declining)", traj:"↓", posture:"VALUE", tilt:0.85, note:"Labrum injury eroded his arm (the core skill) — thesis changed; buy cheap or pass." },
+  "bishop letson":     { team:"Brewers", tier:"Young arm", traj:"↑", posture:"FLIER", tilt:1.10, note:"Best FB + SL in system; far from MLB — small cheap positions." },
+  "marco dinges":      { team:"Brewers", tier:"Riser #10", traj:"↑", posture:"FLIER", tilt:1.05, note:"Bat-first catcher; thin market — cheap fliers." },
+  "luis lara":         { team:"Brewers", tier:"Glove OF #12", traj:"↑", posture:"BUY", tilt:1.15, note:"EVENT: just signed 7yr/$31M (6/9) — may not be priced into cards yet. Glove-first ceiling." },
+  "luke adams":        { team:"Brewers", tier:"Corner bat #13", traj:"→", posture:"FLIER", tilt:1.00, note:"Power/OBP corner bat (.850+ OPS); thin market — cheap fliers." },
+  "josh adamczewski":  { team:"Brewers", tier:"Riser #11", traj:"↑", posture:"FLIER", tilt:1.05, note:"Young bat rising (McGonigle comp); cheap small positions." },
+  "braylon payne":     { team:"Brewers", tier:"Toolsy OF", traj:"↑", posture:"FLIER", tilt:1.05, note:"Best athlete/fastest in system; hit tool the question — speed lottery ticket." },
+  "brady ebel":        { team:"Brewers", tier:"Young INF", traj:"↑", posture:"FLIER", tilt:1.00, note:"Bat behind the glove; bloodline (Dino Ebel) gives mild liquidity — cheap only." },
+  "jd thompson":       { team:"Brewers", tier:"Depth LHP", traj:"?", posture:"FLIER", tilt:0.90, note:"THIN DATA — verify status before valuing. Cheap fliers only." },
+  "tyson hardin":      { team:"Brewers", tier:"Arm #19", traj:"↑", posture:"FLIER", tilt:1.00, note:"Depth arm climbing; low demand." },
+  "brock wilken":      { team:"Brewers", tier:"Power 3B #22", traj:"→", posture:"FLIER", tilt:1.00, note:"1st-round power, contact risk; buy cheap." },
+  "blake burke":       { team:"Brewers", tier:"Riser 1B #18", traj:"↑", posture:"BUY", tilt:1.15, note:"Biggest riser (late-'25 swing change); cheap early auto could re-rate. 1B-only bat-must-carry risk." },
+  "diego frontado":    { team:"Brewers", tier:"Deep-system OF", traj:"?", posture:"FLIER", tilt:0.90, note:"THIN DATA — verify before valuing. Cheap fliers only." },
+  "shane drohan":      { team:"Brewers", tier:"Depth LHP #25", traj:"→", posture:"FLIER", tilt:0.90, note:"Depth arm; minimal card demand." },
+  "coleman crow":      { team:"Brewers", tier:"TJ-return #27", traj:"→", posture:"FLIER", tilt:0.90, note:"Depth arm off Tommy John; minimal demand." },
+  "craig yoho":        { team:"Brewers", tier:"RP #29", traj:"→", posture:"FLIER", tilt:0.85, note:"Reliever = lowest card value; cheap only." },
+  "josh knoth":        { team:"Brewers", tier:"Young arm", traj:"↑", posture:"FLIER", tilt:1.00, note:"Best curveball in system; far from MLB — small positions." },
+  "eric bitonti":      { team:"Brewers", tier:"Power #26", traj:"↑", posture:"FLIER", tilt:1.05, note:"Best raw power in system; far from MLB — cheap fliers." },
+  "frank cairone":     { team:"Brewers", tier:"Deep-system LHP", traj:"?", posture:"FLIER", tilt:0.90, note:"THIN DATA — verify before valuing. Cheap fliers only." },
+};
+const POSTURE_META = {
+  "HOLD∞":  { label:"HOLD ∞",        cls:"p-hold"  },
+  "HOLD":   { label:"HOLD",          cls:"p-hold"  },
+  "BUY":    { label:"BUY",           cls:"p-buy"   },
+  "VALUE":  { label:"VALUE-ONLY",    cls:"p-value" },
+  "SELL":   { label:"MOMENTUM-SELL", cls:"p-sell"  },
+  "CAUTION":{ label:"CAUTION",       cls:"p-sell"  },
+  "FLIER":  { label:"FLIER",         cls:"p-flier" },
+  "AVOID":  { label:"AVOID",         cls:"p-avoid" },
+};
+function brainFor(player){
+  if (!player) return null;
+  const k = player.toLowerCase().trim();
+  if (PLAYER_BRAIN[k]) return PLAYER_BRAIN[k];
+  // fuzzy: one-off searches may carry extra words — match a known name contained in the query
+  for (const name in PLAYER_BRAIN){ if (k.includes(name) || name.includes(k)) return PLAYER_BRAIN[name]; }
+  return null;
+}
+function intelLine(player){
+  const b = brainFor(player);
+  if (!b) return "";
+  const pm = POSTURE_META[b.posture] || { label:b.posture, cls:"p-value" };
+  const alert = b.cardTeams ? `<span class="alert">card says: ${b.cardTeams.join("/")}</span>` : "";
+  return `<div class="intel">
+    <span class="team">✓ ${b.team}</span>${alert}
+    <span class="posture ${pm.cls}">${pm.label}</span>
+    <span class="note">${esc(b.tier)} ${b.traj||""} · ${esc(b.note)}</span>
+  </div>`;
+}
+
+/* ============ INTEL ENGINE (live stats / statcast / news -> tilt suggestions) ============ */
+/* Design: conservative nudges. One game / one headline = small (±0.02–0.05).
+   Sustained Statcast signal or hard news (injury/callup) = bigger. Always shows the data. */
+
+function intelDateStr(d){ return new Date(d).toISOString().slice(0,10); }
+
+async function workerGet(path){
+  const base = localStorage.getItem("cs_worker");
+  if (!base) throw new Error("Set your Worker URL in Setup first.");
+  const resp = await fetch(`${base}${path}`);
+  if (!resp.ok) throw new Error(`worker ${resp.status}`);
+  return resp.json();
+}
+
+// Interpret one player's bundle -> { delta, drivers[] }. drivers carry the shown evidence.
+function interpretPlayer(name, stats, statcast, newsItems){
+  const drivers = [];
+  let statDelta = 0;   // the 70% bucket (stats + statcast + game logs)
+  let newsDelta = 0;   // the 30% bucket
+  // level label: "" for MLB, "AAA · " / "AA · " etc for minors (so a stat's level is always clear)
+  const lvl = (stats && stats.level && stats.level !== "MLB") ? (stats.level + " · ") : "";
+
+  // ---- STATCAST (underlying skill) ----
+  if (statcast){
+    const xwoba = parseFloat(statcast.xwoba);
+    const barrel = parseFloat(statcast.barrel_batted_rate);
+    const ev = parseFloat(statcast.exit_velocity_avg);
+    const hh = parseFloat(statcast.hard_hit_percent);
+    const bits = [];
+    if (!isNaN(xwoba)) bits.push(`xwOBA ${statcast.xwoba}`);
+    if (!isNaN(barrel)) bits.push(`barrel ${barrel}%`);
+    if (!isNaN(ev)) bits.push(`EV ${ev}`);
+    if (!isNaN(hh)) bits.push(`HH ${hh}%`);
+    // strong underlying contact -> upward; weak -> downward. Thresholds are deliberately mild.
+    if (!isNaN(barrel) && !isNaN(ev)){
+      if (barrel >= 12 || ev >= 92){ statDelta += 0.04; drivers.push({k:"statcast", dir:"+", txt:`Strong contact (${bits.join(", ")})`}); }
+      else if (barrel <= 5 && ev <= 88){ statDelta -= 0.04; drivers.push({k:"statcast", dir:"-", txt:`Soft contact (${bits.join(", ")})`}); }
+      else drivers.push({k:"statcast", dir:"0", txt:`Statcast: ${bits.join(", ")}`});
+    } else if (bits.length){
+      drivers.push({k:"statcast", dir:"0", txt:`Statcast: ${bits.join(", ")}`});
+    }
+  }
+
+  // ---- RECENT GAME LOGS (small nudges; one game is not a trend) ----
+  if (stats && stats.recentGames && stats.recentGames.length){
+    const g = stats.recentGames;
+    // pitchers
+    const pitch = g.filter(x=>x.type==="pitching");
+    const hit = g.filter(x=>x.type==="hitting");
+    if (pitch.length){
+      // dominant outing: >=5 IP and 0 ER
+      const gem = pitch.find(p => parseFloat(p.ip) >= 5 && (+p.er||0) === 0);
+      if (gem){ statDelta += 0.02; drivers.push({k:"game", dir:"+", txt:`${lvl}Recent: ${gem.ip} IP, ${gem.er} ER, ${gem.k} K (${gem.date}) — one strong start`}); }
+      const blow = pitch.find(p => (+p.er||0) >= 5);
+      if (blow){ statDelta -= 0.02; drivers.push({k:"game", dir:"-", txt:`${lvl}Recent: ${blow.er} ER in ${blow.ip} IP (${blow.date}) — rough outing`}); }
+    }
+    if (hit.length){
+      const hr = hit.reduce((s,x)=>s+(+x.hr||0),0);
+      if (hr >= 2){ statDelta += 0.02; drivers.push({k:"game", dir:"+", txt:`${lvl}Recent: ${hr} HR across ${hit.length} game(s)`}); }
+    }
+  }
+
+  // ---- SEASON LINE context (light touch, informational) ----
+  if (stats && stats.season){
+    if (stats.season.pitching && stats.season.pitching.era != null){
+      const era = parseFloat(stats.season.pitching.era);
+      if (!isNaN(era)){
+        if (era < 3.0){ statDelta += 0.02; drivers.push({k:"season", dir:"+", txt:`${lvl}Season ERA ${stats.season.pitching.era}, ${stats.season.pitching.k} K`}); }
+        else if (era > 5.0){ statDelta -= 0.02; drivers.push({k:"season", dir:"-", txt:`${lvl}Season ERA ${stats.season.pitching.era}`}); }
+      }
+    }
+    if (stats.season.hitting && stats.season.hitting.ops != null){
+      const ops = parseFloat(stats.season.hitting.ops);
+      if (!isNaN(ops)){
+        if (ops >= .850){ statDelta += 0.02; drivers.push({k:"season", dir:"+", txt:`${lvl}Season OPS ${stats.season.hitting.ops}, ${stats.season.hitting.hr} HR`}); }
+        else if (ops <= .650){ statDelta -= 0.02; drivers.push({k:"season", dir:"-", txt:`${lvl}Season OPS ${stats.season.hitting.ops}`}); }
+      }
+    }
+  }
+
+  // ---- ROLLING TREND (last 7 vs 30) — catches a player heating up / cooling off ----
+  if (stats && stats.trend){
+    const tr = stats.trend;
+    if (tr.kind === "hitting" && tr.last7 && tr.last30 && tr.last7.games >= 5){
+      const d = tr.last7.ops - tr.last30.ops;      // positive = recent hotter than baseline
+      const l7 = tr.last7.ops.toFixed(3), l15 = tr.last15 ? tr.last15.ops.toFixed(3) : "—", l30 = tr.last30.ops.toFixed(3);
+      if (d >= 0.150){ statDelta += 0.05; drivers.push({k:"trend", dir:"+", txt:`${lvl}HEATING UP: OPS last30 ${l30} → last15 ${l15} → last7 ${l7} (+${d.toFixed(3)})`}); }
+      else if (d >= 0.080){ statDelta += 0.03; drivers.push({k:"trend", dir:"+", txt:`${lvl}warming: OPS last30 ${l30} → last7 ${l7} (+${d.toFixed(3)})`}); }
+      else if (d <= -0.150){ statDelta -= 0.05; drivers.push({k:"trend", dir:"-", txt:`${lvl}COOLING OFF: OPS last30 ${l30} → last7 ${l7} (${d.toFixed(3)})`}); }
+      else if (d <= -0.080){ statDelta -= 0.03; drivers.push({k:"trend", dir:"-", txt:`${lvl}cooling: OPS last30 ${l30} → last7 ${l7} (${d.toFixed(3)})`}); }
+    } else if (tr.kind === "pitching" && tr.last7 && tr.last30 && tr.last7.games >= 3){
+      // for pitchers, LOWER recent ERA = heating up (pitching better)
+      const d = tr.last30.era - tr.last7.era;       // positive = recent ERA lower than baseline = better
+      const l7 = tr.last7.era.toFixed(2), l30 = tr.last30.era.toFixed(2);
+      if (d >= 1.50){ statDelta += 0.05; drivers.push({k:"trend", dir:"+", txt:`${lvl}DEALING: ERA last30 ${l30} → last7 ${l7} (improving)`}); }
+      else if (d >= 0.75){ statDelta += 0.03; drivers.push({k:"trend", dir:"+", txt:`${lvl}trending up: ERA last30 ${l30} → last7 ${l7}`}); }
+      else if (d <= -1.50){ statDelta -= 0.05; drivers.push({k:"trend", dir:"-", txt:`${lvl}STRUGGLING: ERA last30 ${l30} → last7 ${l7} (worsening)`}); }
+      else if (d <= -0.75){ statDelta -= 0.03; drivers.push({k:"trend", dir:"-", txt:`${lvl}slipping: ERA last30 ${l30} → last7 ${l7}`}); }
+    }
+  }
+
+  // ---- NEWS (30% bucket) keyword -> nudge map ----
+  // hard = discrete facts (debut/injury/demotion) -> bigger, undampened weight.
+  // soft = sentiment/role chatter -> small, goes in the 30% bucket.
+  const NEWS_RULES = [
+    { re:/(call(ed)?\s*up|promoted|mlb debut|making his debut|recalled)/i, d:+0.08, label:"call-up / debut", hard:true },
+    { re:/(injury|injured|\bil\b|strained?|surgery|setback|shut down|shutdown|fractur|sprain|tear|torn)/i, d:-0.12, label:"injury / IL", hard:true },
+    { re:/(demot|optioned|sent down|designated?\b|for assignment|\bdfa\b|waiver|released)/i, d:-0.10, label:"demotion / DFA", hard:true },
+    { re:/(player of the (week|month)|all.?star|cy young|gold glove|mvp|rookie of)/i, d:+0.05, label:"award / honor", hard:false },
+    { re:/(extension|signs?|signed|new deal|contract)/i, d:+0.04, label:"contract / extension", hard:false },
+    { re:/(everyday|regular role|taking over|starting (job|role)|named the)/i, d:+0.03, label:"role increase", hard:false },
+    { re:/(delay(ing)?|extra rest|skipped|pushed back)/i, d:-0.02, label:"rest / delay", hard:false },
+    { re:/(slump|struggl|cold streak|benched)/i, d:-0.03, label:"slump / benched", hard:false },
+    // performance events mentioned in prose (small, soft — sentence-attributed)
+    { re:/(home ?run|homer(ed|s)?|went deep|long ball|grand slam|multi-?homer)/i, d:+0.03, label:"power (HR)", hard:false },
+    { re:/(walk-?off|game-?winning|clutch)/i, d:+0.03, label:"clutch hit", hard:false },
+    { re:/(complete game|shutout|gem|dominant start|struck out \d{2})/i, d:+0.03, label:"strong start", hard:false },
+  ];
+  // Name match: last name is enough for UNIQUE last names (beat writers drop the first
+  // name after first reference). But if the last name is shared by multiple watchlist
+  // players (e.g. Devin & Jett Williams, the Gassers), require the FULL name to avoid
+  // crediting the wrong guy off one ambiguous headline.
+  const nameParts = name.toLowerCase().split(/\s+/).filter(Boolean);
+  const first = nameParts[0] || "";
+  const last = nameParts[nameParts.length - 1] || "";
+  const ambiguous = (typeof AMBIGUOUS_LASTNAMES !== "undefined") && AMBIGUOUS_LASTNAMES.has(last);
+  // is THIS player explicitly named in a given (lowercased) sentence?
+  function namedHere(s){
+    if (!s.includes(last)) return false;
+    if (ambiguous && nameParts.length >= 2) return s.includes(first);
+    return true;
+  }
+  // does the sentence name some OTHER tracked player (so the subject switches away)?
+  function namesAnotherPlayer(s){
+    if (typeof ALL_WATCH_NAMES === "undefined") return false;
+    for (const other of ALL_WATCH_NAMES){
+      if (other === name.toLowerCase()) continue;
+      const op = other.split(/\s+/).filter(Boolean);
+      const ol = op[op.length-1]; if (!ol) continue;
+      if (s.includes(ol)) {
+        // respect ambiguity: shared last name needs the other's first name too
+        if ((typeof AMBIGUOUS_LASTNAMES !== "undefined") && AMBIGUOUS_LASTNAMES.has(ol) && op.length>=2){
+          if (s.includes(op[0])) return true;
+        } else return true;
+      }
+    }
+    return false;
+  }
+  let hardDelta = 0;
+  const REHAB_RE = /(rehab|return(ing)?\s+from|injur(y|ed)\s+return|comeback|minor league)/i;
+  const REHAB_POS = /(strong|dominant|domination|scoreless|shutout|hitless|five[\- ]plus|6 (scoreless|shutout)|on track|nearing|close to return|ready|impress|sharp|cruised?|no runs|0 (er|runs))/i;
+  const REHAB_NEG = /(setback|shelled|rocked|roughed|struggl|crushed|blow(n|up)|gave up \d|allowed \d|hammered|shut down|shutdown|another delay|delayed|placed back|return to il)/i;
+  const PRONOUN_RE = /^\s*(he|his|him)\b/i;
+
+  for (const it of (newsItems||[])){
+    const fullText = (it.title||"") + ". " + (it.body||it.summary||"");
+    // split into sentences; track the current subject via naming + pronoun carryover
+    const sentences = fullText.replace(/\n+/g," ").split(/(?<=[.!?])\s+/).filter(x=>x.trim().length);
+    let subjectIsThisPlayer = false;
+    let subjectKnown = false; // is the current subject any tracked player?
+    for (const rawSent of sentences){
+      const s = rawSent.toLowerCase();
+      if (namedHere(s)){ subjectIsThisPlayer = true; subjectKnown = true; }
+      else if (namesAnotherPlayer(s)){ subjectIsThisPlayer = false; subjectKnown = true; }
+      else if (PRONOUN_RE.test(rawSent) && subjectKnown){ /* carry subject over */ }
+      else { subjectIsThisPlayer = false; subjectKnown = false; } // unknown subject -> ignore
+      if (!subjectIsThisPlayer) continue;
+
+      const snip = rawSent.trim().slice(0,90);
+      // rehab handling within this sentence
+      if (REHAB_RE.test(s)){
+        if (REHAB_POS.test(s) && !REHAB_NEG.test(s)){
+          hardDelta += 0.06; drivers.push({k:"news", dir:"+", txt:`rehab going well: "${snip}" (${it.source||"news"})`});
+        } else if (REHAB_NEG.test(s)){
+          hardDelta -= 0.08; drivers.push({k:"news", dir:"-", txt:`rehab setback: "${snip}" (${it.source||"news"})`});
+        } else {
+          drivers.push({k:"news", dir:"0", txt:`rehab news (outcome unclear — review): "${snip}" (${it.source||"news"})`});
+        }
+        continue; // sentence handled
+      }
+      for (const rule of NEWS_RULES){
+        if (rule.re.test(s)){
+          if (rule.hard) hardDelta += rule.d; else newsDelta += rule.d;
+          drivers.push({k:"news", dir: rule.d>0?"+":"-", txt:`${rule.label}: "${snip}" (${it.source||"news"})`});
+          break; // one rule per sentence
+        }
+      }
+    }
+  }
+
+  // ---- combine: stats 70% + soft-news 30%, then add hard events at full weight ----
+  let delta = 0.70*statDelta + 0.30*newsDelta + hardDelta;
+  delta = Math.max(-0.20, Math.min(0.20, delta));   // a single refresh can't swing more than ±0.20
+  delta = Math.round(delta*100)/100;
+  return { delta, drivers };
+}
+
+
+/* ---- orchestration: pull all sources since last pull, build suggestions ---- */
+let intelSuggestions = [];   // [{player, cur, suggested, delta, drivers[]}]
+let intelReviewed = { noData: [], noChange: [] };
+
+async function refreshIntel(){
+  const btn = document.getElementById("intelBtn");
+  const statusEl = document.getElementById("intelStatus");
+  if (btn) btn.disabled = true;
+  try {
+    const since = lastIntelPull ? intelDateStr(lastIntelPull) : intelDateStr(Date.now() - 7*86400000);
+    statusEl.textContent = `Pulling stats, Statcast & news since ${since}…`;
+
+    // players to evaluate = current watchlist
+    const names = watchlist.map(w => w.player);
+    const namesParam = encodeURIComponent(names.join("|"));
+
+    // 1) news (one call, covers everyone)
+    let news = { items: [] };
+    try { news = await workerGet(`/news`); } catch(e){ /* news optional */ }
+
+    // 2) stats with game logs since last pull
+    let statsResp = { players: [] };
+    try { statsResp = await workerGet(`/stats?players=${namesParam}&since=${since}`); } catch(e){}
+
+    // 3) statcast — batters and pitchers separately (one call each, then match)
+    let scBat = { players: [] }, scPit = { players: [] };
+    try { scBat = await workerGet(`/statcast?players=${namesParam}&type=batter`); } catch(e){}
+    try { scPit = await workerGet(`/statcast?players=${namesParam}&type=pitcher`); } catch(e){}
+
+    // index helpers
+    const statsByName = {};
+    for (const p of (statsResp.players||[])) if (p.found) statsByName[(p.query||"").toLowerCase()] = p;
+    const scByName = {};
+    for (const p of [...(scBat.players||[]), ...(scPit.players||[])]){
+      const nm = (p["last_name, first_name"]||"").toLowerCase(); // "last, first"
+      scByName[nm] = p;
+    }
+    function matchStatcast(name){
+      const parts = name.toLowerCase().split(/\s+/);
+      for (const key in scByName){ if (parts.every(pp => key.includes(pp))) return scByName[key]; }
+      return null;
+    }
+
+    intelSuggestions = [];
+    intelReviewed = { noData: [], noChange: [] };
+    // find last names shared by 2+ watchlist players -> those need full-name matching
+    const lastCounts = {};
+    for (const w of watchlist){
+      const lp = w.player.toLowerCase().split(/\s+/).filter(Boolean);
+      const ln = lp[lp.length-1]; if (ln) lastCounts[ln] = (lastCounts[ln]||0)+1;
+    }
+    window.AMBIGUOUS_LASTNAMES = new Set(Object.keys(lastCounts).filter(k=>lastCounts[k]>1));
+    window.ALL_WATCH_NAMES = watchlist.map(w=>w.player.toLowerCase());
+    for (const w of watchlist){
+      const nm = w.player;
+      const stats = statsByName[nm.toLowerCase()] || null;
+      const statcast = matchStatcast(nm);
+      const { delta, drivers } = interpretPlayer(nm, stats, statcast, news.items);
+      const hadData = !!(stats || statcast);
+      if (!drivers.length){
+        intelReviewed[hadData ? "noChange" : "noData"].push(nm);
+        continue;
+      }
+      const cur = tiltFor(nm);
+      let suggested = Math.round(Math.max(0.5, Math.min(1.5, cur + delta))*100)/100;
+      // only surface if there's a real change OR meaningful confirming data
+      if (Math.abs(suggested - cur) < 0.01 && !drivers.some(d=>d.dir!=="0")){
+        intelReviewed.noChange.push(nm);
+        continue;
+      }
+      intelSuggestions.push({ player: nm, cur, suggested, delta, drivers });
+    }
+    // biggest moves first
+    intelSuggestions.sort((a,b)=> Math.abs(b.suggested-b.cur) - Math.abs(a.suggested-a.cur));
+
+    lastIntelPull = new Date().toISOString();
+    localStorage.setItem("cs_lastIntelPull", lastIntelPull);
+    renderIntelPanel();
+    statusEl.textContent = `Done — ${intelSuggestions.length} player(s) with new intel. Last pull: ${new Date().toLocaleString()}`;
+  } catch(err){
+    statusEl.textContent = "Intel error: " + err.message;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function driverChip(d){
+  const cls = d.dir === "+" ? "tilt-up" : d.dir === "-" ? "tilt-down" : "tilt-flat";
+  const ic  = d.k === "statcast" ? "📊" : d.k === "news" ? "📰" : d.k === "game" ? "⚾" : "•";
+  return `<div class="drv ${cls}">${ic} ${esc(d.txt)}</div>`;
+}
+
+function renderIntelPanel(){
+  const el = document.getElementById("intelPanel");
+  if (!el) return;
+  if (!intelSuggestions.length){
+    el.innerHTML = `<p class="small">No suggestions yet. Click “Refresh Intel” to pull the latest stats, Statcast & news and see proposed tilt changes.</p>`;
+    return;
+  }
+  el.innerHTML = intelSuggestions.map((s,i)=>{
+    const move = s.suggested - s.cur;
+    const moveCls = move>0 ? "tilt-up" : move<0 ? "tilt-down" : "tilt-flat";
+    const arrow = move>0 ? "▲" : move<0 ? "▼" : "→";
+    const sign = move>0 ? "+" : "";
+    return `<div class="intel-card" id="intelCard${i}">
+      <div class="intel-head">
+        <b>${esc(s.player)}</b>
+        <span class="tiltbadge tilt-flat">${s.cur.toFixed(2)}x</span>
+        <span class="arrow ${moveCls}">${arrow}</span>
+        <span class="tiltbadge ${moveCls}">${s.suggested.toFixed(2)}x</span>
+        <span class="small ${moveCls}">${sign}${move.toFixed(2)}</span>
+      </div>
+      <div class="intel-drivers">${s.drivers.map(driverChip).join("")}</div>
+      <div class="intel-actions">
+        <button onclick="acceptIntel(${i})">✓ Accept ${s.suggested.toFixed(2)}x</button>
+        <span class="override">or set:
+          <input type="number" step="0.01" min="0.5" max="1.5" id="ovr${i}" value="${s.suggested.toFixed(2)}" class="ovr-input">
+          <button class="secondary" onclick="applyIntel(${i})">Apply</button>
+        </span>
+        <button class="secondary" onclick="rejectIntel(${i})">✕ Reject</button>
+      </div>
+    </div>`;
+  }).join("") + reviewedSummary();
+}
+
+function reviewedSummary(){
+  const nc = (intelReviewed.noChange||[]);
+  const nd = (intelReviewed.noData||[]);
+  if (!nc.length && !nd.length) return "";
+  let h = `<div class="reviewed">`;
+  if (nc.length) h += `<details><summary>✓ Reviewed, no change needed (${nc.length})</summary><div class="small" style="margin-top:6px">${nc.map(esc).join(", ")}</div></details>`;
+  if (nd.length) h += `<details><summary>— No data found this pull (${nd.length})</summary><div class="small" style="margin-top:6px">Usually minor-league prospects not in MLB stats/Statcast yet, or no recent news: ${nd.map(esc).join(", ")}</div></details>`;
+  h += `</div>`;
+  return h;
+}
+
+function commitTilt(i, chosen, wasOverride){
+  const s = intelSuggestions[i]; if (!s) return;
+  chosen = Math.max(0.5, Math.min(1.5, Math.round(chosen*100)/100));
+  const key = s.player.toLowerCase().trim();
+  tiltOverride[key] = { tilt: chosen, note: s.drivers.map(d=>d.txt).join(" | "), ts: new Date().toISOString() };
+  save("cs_tiltOverride", tiltOverride);
+  // log BOTH what the engine suggested and what you chose — the gap is tuning data
+  (intelLog[key] = intelLog[key] || []).push({
+    ts: new Date().toISOString(), from: s.cur, suggested: s.suggested,
+    chosen, override: !!wasOverride, drivers: s.drivers.map(d=>d.txt)
+  });
+  save("cs_intelLog", intelLog);
+  const card = document.getElementById("intelCard"+i);
+  if (card){
+    const tag = wasOverride ? `<b>your override</b>` : `accepted`;
+    card.innerHTML = `<div class="small">✓ ${tag} — <b>${esc(s.player)}</b> tilt now <b>${chosen.toFixed(2)}x</b>` +
+      (wasOverride ? ` (engine suggested ${s.suggested.toFixed(2)}x)` : ``) +
+      `. Re-scan to see updated forward values.</div>`;
+  }
+  renderBrainPanel();
+}
+function acceptIntel(i){ const s=intelSuggestions[i]; if(s) commitTilt(i, s.suggested, false); }
+function applyIntel(i){
+  const inp = document.getElementById("ovr"+i);
+  const v = parseFloat(inp && inp.value);
+  if (isNaN(v)) return;
+  commitTilt(i, v, true);
+}
+function rejectIntel(i){
+  const s = intelSuggestions[i];
+  const card = document.getElementById("intelCard"+i);
+  if (card) card.innerHTML = `<div class="small">✕ Rejected — ${esc(s.player)} tilt unchanged at ${s.cur.toFixed(2)}x.</div>`;
+}
+
+function renderBrainPanel(){
+  const el = document.getElementById("brainPanel");
+  if (!el) return;
+  const rows = watchlist.map(w => {
+    const b = brainFor(w.player); if (!b) return "";
+    const pm = POSTURE_META[b.posture] || { label:b.posture, cls:"p-value" };
+    const alert = b.cardTeams ? ` <span class="alert">card: ${b.cardTeams.join("/")}</span>` : "";
+    return `<tr>
+      <td><b>${esc(w.player)}</b></td>
+      <td><span class="team">${b.team}</span>${alert}</td>
+      <td>${esc(b.tier)} ${b.traj||""}</td>
+      <td><span class="posture ${pm.cls}">${pm.label}</span></td>
+      <td class="note">${esc(b.note)}</td>
+    </tr>`;
+  }).join("");
+  el.innerHTML = `<table class="brain-table">
+    <tr><th>Player</th><th>Current Team</th><th>Tier</th><th>Posture</th><th>Note</th></tr>${rows}</table>`;
+}
+
+/* ============ CONFIG ============ */
+const workerUrlEl = document.getElementById("workerUrl");
+workerUrlEl.value = localStorage.getItem("cs_worker") || "";
+if (!workerUrlEl.value) document.getElementById("configDetails").open = true;
+function saveConfig(){
+  localStorage.setItem("cs_worker", workerUrlEl.value.trim().replace(/\/$/,""));
+  document.getElementById("configDetails").open = false;
+  setStatus("Worker URL saved.");
+}
+
+/* ============ WATCHLIST UI ============ */
+function renderWatchlist(){
+  const el = document.getElementById("watchlist");
+  const groups = ["Prospects","Roster"];
+  el.innerHTML = groups.map(g => {
+    const members = watchlist.map((w,i)=>({...w,i})).filter(w => w.group === g);
+    if (!members.length) return "";
+    return `<div class="small" style="margin:8px 0 4px"><b>${g}</b> (${members.length})</div>` +
+      members.map(w =>
+        `<span class="chip"><b>${esc(w.player)}</b>${w.keywords?` <span class="small">${esc(w.keywords)}</span>`:""}
+         <button onclick="removePlayer(${w.i})">✕</button></span>`).join(" ");
+  }).join("");
+}
+function addPlayer(){
+  const p = document.getElementById("newPlayer").value.trim();
+  if (!p) return;
+  watchlist.push({ player: p,
+    keywords: document.getElementById("newKeywords").value.trim(),
+    group: document.getElementById("newGroup").value });
+  save("cs_watchlist", watchlist);
+  document.getElementById("newPlayer").value = "";
+  document.getElementById("newKeywords").value = "";
+  renderWatchlist();
+}
+function restoreDefaults(){
+  if (!confirm("Replace your current watchlist with the full Brewers list (top 30 prospects + MLB roster)? Custom additions will be removed.")) return;
+  watchlist = JSON.parse(JSON.stringify(DEFAULT_WATCHLIST));
+  save("cs_watchlist", watchlist);
+  renderWatchlist();
+}
+function removePlayer(i){
+  watchlist.splice(i,1); save("cs_watchlist", watchlist); renderWatchlist();
+}
+renderWatchlist();
+renderBrainPanel();
+renderTrends();
+renderIntelPanel();
+
+/* ============ TITLE PARSER ============ */
+// The heart of the tool: turn a messy eBay title into a structured card identity.
+const PARALLELS = [
+  "superfractor","red wave","rose gold","black rose gold","gold wave","orange wave","blue wave",
+  "aqua wave","green wave","purple wave","sapphire","red refractor","orange refractor",
+  "gold refractor","green refractor","blue refractor","purple refractor","aqua refractor",
+  "black refractor","x-fractor","xfractor","mojo","lava","raywave","ray wave","shimmer",
+  "speckle","crackle","geometric","reptilian","logofractor","atomic","prism","scintillate",
+  "lazer","lasers","mini diamond","mega box","sterling","true blue","fuchsia","magenta",
+  "yellow","orange","red","blue","green","purple","aqua","teal","gold","black","pink","white"
+];
+const PRODUCTS = [
+  "bowman chrome sapphire","bowman sterling","bowman chrome","bowman draft","bowman's best",
+  "bowmans best","topps chrome update","topps chrome black","topps chrome","topps finest",
+  "finest","topps sterling","topps tribute","tribute","topps inception","inception",
+  "topps update","topps heritage","heritage","stadium club chrome","stadium club",
+  "topps gold label","gold label","topps pristine","pristine","topps five star","five star",
+  "topps luminaries","luminaries","topps archives","archives","topps series","topps"
+];
+
+function parseTitle(rawTitle){
+  const t = " " + rawTitle.toLowerCase().replace(/[\u2013\u2014]/g,"-") + " ";
+  const out = { raw: rawTitle, auto: false, printRun: null, serial: null,
+                parallel: null, product: null, graded: null, chrome: false, lot: false, digital: false };
+
+  // graded?
+  const g = t.match(/\b(psa|bgs|sgc|cgc)\s*(10|9\.5|9|8\.5|8|7)\b/);
+  if (g) out.graded = (g[1] + " " + g[2]).toUpperCase();
+
+  // lot?
+  if (/\blot\b|\bx\d+\b.*cards|\(\d+\)\s*cards/.test(t)) out.lot = true;
+
+  // digital (Topps Bunt app / digital-only cards) — not physical, exclude
+  if (/\bdigital\b|\bbunt\b|topps bunt/.test(t)) out.digital = true;
+
+  // auto?
+  if (/\bauto\b|\bautograph\b|\bsigned\b|\bau\b/.test(t)) out.auto = true;
+
+  // serial / print run: "12/99", "#/99", "/99", "1 of 25", "23 of 75"
+  let m = t.match(/\b(\d{1,3})\s*\/\s*(\d{1,4})\b/);   // 12/99
+  if (m && +m[2] >= +m[1] && +m[2] <= 2999) { out.serial = m[1]+"/"+m[2]; out.printRun = +m[2]; }
+  if (!out.printRun) {
+    m = t.match(/(?:^|[\s#])\/\s*(\d{1,4})\b/);         // /99
+    if (m && +m[1] <= 2999) out.printRun = +m[1];
+  }
+  if (!out.printRun) {
+    m = t.match(/\b(\d{1,3})\s+of\s+(\d{1,4})\b/);      // 23 of 75
+    if (m && +m[2] <= 2999) { out.serial = m[1]+"/"+m[2]; out.printRun = +m[2]; }
+  }
+
+  // product (longest match first — list is ordered)
+  for (const p of PRODUCTS) { if (t.includes(" "+p+" ") || t.includes(" "+p)) { out.product = p; break; } }
+  out.chrome = /chrome|finest|sterling|sapphire|refractor|pristine/.test(t);
+
+  // parallel (longest/most specific first — list is ordered)
+  for (const p of PARALLELS) { if (t.includes(p)) { out.parallel = p; break; } }
+  // don't let the product name leak into the parallel (e.g. "bowman sterling" -> parallel "sterling")
+  if (out.product && out.parallel && out.product.includes(out.parallel)) out.parallel = null;
+
+  return out;
+}
+
+// Card identity key for grouping "same card" listings
+function cardKey(player, parsed){
+  return [
+    player.toLowerCase(),
+    parsed.product || "?",
+    parsed.parallel || "base",
+    parsed.printRun ? "/"+parsed.printRun : "unnumbered",
+    parsed.auto ? "auto" : "noauto",
+    parsed.graded ? parsed.graded : "raw",
+  ].join(" | ");
+}
+
+/* ============ SCANNING ============ */
+function setStatus(s){ document.getElementById("status").textContent = s; }
+
+async function fetchListings(query){
+  const base = localStorage.getItem("cs_worker");
+  if (!base) { setStatus("⚠️ Set your Worker URL in Setup first."); throw new Error("no worker"); }
+  const params = new URLSearchParams({
+    q: query,
+    limit: "200",
+    buyingOptions: document.getElementById("fBuying").value,
+  });
+  const maxPrice = document.getElementById("fMaxPrice").value;
+  if (maxPrice) params.set("maxPrice", maxPrice);
+  const resp = await fetch(`${base}/search?${params}`);
+  const data = await resp.json();
+  if (data.error) throw new Error(JSON.stringify(data.error));
+  return data.items || [];
+}
+
+async function scanAll(){
+  const btn = document.getElementById("scanBtn");
+  btn.disabled = true;
+  lastItems = [];
+  const groupSel = document.getElementById("scanGroup").value;
+  const targets = groupSel === "ALL" ? watchlist : watchlist.filter(w => w.group === groupSel);
+  try {
+    for (let i = 0; i < targets.length; i++) {
+      const w = targets[i];
+      setStatus(`Scanning ${i+1}/${targets.length}: ${w.player}…`);
+      const q = [w.player, w.keywords, "auto OR refractor OR chrome"].filter(Boolean).join(" ");
+      try {
+        const items = await fetchListings(q);
+        for (const it of items) {
+          // require the player's last name in the title to cut noise
+          const lastName = w.player.trim().split(/\s+/).slice(-1)[0].toLowerCase();
+          if (!it.title.toLowerCase().includes(lastName)) continue;
+          lastItems.push({ ...it, player: w.player, parsed: parseTitle(it.title) });
+        }
+      } catch(e) { console.warn("scan error", w.player, e); }
+      await new Promise(r => setTimeout(r, 250)); // be polite to rate limits
+    }
+    document.getElementById("lastScan").textContent =
+      "Last scan: " + new Date().toLocaleTimeString();
+    processResults(true);
+    setStatus(`Done — ${lastItems.length} listings pulled across ${targets.length} players.`);
+  } finally { btn.disabled = false; }
+}
+
+async function scanOneOff(){
+  const q = document.getElementById("oneOff").value.trim();
+  if (!q) return;
+  setStatus(`Searching: ${q}…`);
+  lastItems = [];
+  const items = await fetchListings(q);
+  const player = q.split(/\s+/).slice(0,2).join(" ");
+  for (const it of items) lastItems.push({ ...it, player, parsed: parseTitle(it.title) });
+  processResults(true);
+  setStatus(`Done — ${lastItems.length} listings.`);
+}
+
+/* ============ ANALYSIS ============ */
+function applyFilters(items){
+  const numbered = document.getElementById("fNumbered").checked;
+  const autosOk  = document.getElementById("fAutosOk").checked;
+  const chromeOnly = document.getElementById("fChrome").checked;
+  const rawOnly  = document.getElementById("fRaw").checked;
+  const maxPrint = +document.getElementById("fMaxPrint").value;
+  return items.filter(it => {
+    const p = it.parsed;
+    if (p.lot) return false;
+    if (p.digital) return false;                          // skip Topps Bunt / digital-only cards
+    if (numbered && !p.printRun && !p.auto) return false;   // framework: numbered OR auto
+    if (!autosOk && p.auto) return false;
+    if (chromeOnly && !p.chrome) return false;
+    if (rawOnly && p.graded) return false;
+    if (p.printRun && p.printRun > maxPrint) return false;
+    if (it.price == null) return false;
+    return true;
+  });
+}
+
+function totalCost(it){ return it.price + (it.shipping || 0); }
+
+function median(nums){
+  const s = [...nums].sort((a,b)=>a-b), n = s.length;
+  if (!n) return null;
+  return n % 2 ? s[(n-1)/2] : (s[n/2-1] + s[n/2]) / 2;
+}
+// TILT: forward-conviction multiplier (0.5-1.5). Where the card is HEADING, not its price today.
+// Explicit per-player in the brain; falls back to posture mapping, then neutral 1.0.
+function tiltFor(player){
+  const b = brainFor(player); if (!b) return 1.0;
+  // accepted intel changes win over the static brain value
+  const k = player.toLowerCase().trim();
+  for (const name in tiltOverride){ if (k.includes(name) || name.includes(k)){ if (typeof tiltOverride[name].tilt === "number") return tiltOverride[name].tilt; } }
+  if (typeof b.tilt === "number") return b.tilt;
+  return ({ "HOLD∞":1.5, "BUY":1.4, "HOLD":1.2, "CAUTION":1.0, "VALUE":0.8, "FLIER":0.6, "SELL":0.5, "AVOID":0.5 }[b.posture]) || 1.0;
+}
+// tierWeight kept as an alias for ranking tiebreaks (floats aces above fillers)
+function tierWeight(player){ return tiltFor(player); }
+// 12-month forward value = today's market FMV projected by forward conviction (tilt)
+function forwardValue(fmv, player){ return (fmv == null) ? null : fmv * tiltFor(player); }
+// FMV for a card identity: your manual override wins; else the live market median (needs 3+ listings)
+function fmvFor(key, list){
+  if (fmvBook[key] && fmvBook[key] > 0) return { fmv: fmvBook[key], src: "yours" };
+  if (list.length >= 3) return { fmv: median(list.map(totalCost)), src: "market" };
+  return { fmv: null, src: null };
+}
+function dealLabel(disc){
+  if (disc >= 0.20) return { txt:"STRONG BUY", cls:"d-strong" };
+  if (disc >= 0.10) return { txt:"GOOD",       cls:"d-good"   };
+  if (disc >= -0.05) return { txt:"fair",      cls:"d-fair"   };
+  return { txt:"over market", cls:"d-over" };
+}
+
+/* ============ PRICE HISTORY / TRENDS ============ */
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function daysBetween(a, b){ return Math.round((new Date(b) - new Date(a)) / 86400000); }
+// the snapshot closest to `days` ago (prefer the latest one at/older than the target)
+function snapshotDaysAgo(arr, days){
+  if (arr.length < 2) return null;
+  let best = null;
+  for (const s of arr){
+    const age = daysBetween(s.d, todayStr());      // how many days ago this snapshot is
+    if (age >= days){ best = s; }                  // walk forward; keep the last one >= days old
+  }
+  return best || arr[0];
+}
+// record a dated median snapshot for each investment-grade card (auto or numbered, 3+ listings)
+function recordHistory(groups){
+  const today = todayStr();
+  let changed = false;
+  for (const [key, list] of Object.entries(groups)){
+    if (list.length < 3) continue;
+    const isAuto = key.includes("| auto |");
+    const isNum  = /\|\s\/\d+\s\|/.test(key);
+    if (!isAuto && !isNum) continue;               // skip base commons — keep storage lean + relevant
+    const med = median(list.map(totalCost));
+    if (med < 4) continue;
+    const low = Math.min(...list.map(totalCost));
+    const arr = history[key] = history[key] || [];
+    const last = arr[arr.length - 1];
+    if (last && last.d === today){ last.med = +med.toFixed(2); last.low = +low.toFixed(2); last.n = list.length; last.tilt = tiltFor(list[0].player); }
+    else arr.push({ d: today, med: +med.toFixed(2), low: +low.toFixed(2), n: list.length, tilt: tiltFor(list[0].player) });
+    if (arr.length > 30) arr.splice(0, arr.length - 30);   // cap ~30 snapshots/card
+    changed = true;
+  }
+  if (changed){
+    try { save("cs_history", history); }
+    catch(e){                                       // quota guard: trim to last 15 and retry
+      for (const k in history) if (history[k].length > 15) history[k].splice(0, history[k].length - 15);
+      try { save("cs_history", history); } catch(_){}
+    }
+  }
+}
+// small ▲/▼ chip for a card's recent move
+function trendChip(key){
+  const h = history[key] || [];
+  if (h.length < 2) return "";
+  const cur = h[h.length-1].med;
+  const old = snapshotDaysAgo(h, 7);
+  if (!old || !old.med || old === h[h.length-1]) return "";
+  const pct = (cur - old.med) / old.med * 100;
+  const span = daysBetween(old.d, todayStr());
+  if (Math.abs(pct) < 1) return `<span class="trend flat">→ flat ${span}d</span>`;
+  const up = pct > 0;
+  return `<span class="trend ${up?'up':'down'}">${up?'▲':'▼'} ${Math.abs(pct).toFixed(0)}% ${span}d</span>`;
+}
+function bucketFor(printRunStr){
+  if (printRunStr === "unnumbered") return "unnumbered";
+  const n = +printRunStr.replace("/","");
+  return n <= 25 ? "/1–25" : n <= 99 ? "/26–99" : "/100+";
+}
+function renderTrends(){
+  const el = document.getElementById("trendPanel");
+  if (!el) return;
+  const byPlayer = {}, byBucket = {};
+  let tracked = 0;
+  for (const key in history){
+    const h = history[key];
+    const old = snapshotDaysAgo(h, 7);
+    if (!old || old === h[h.length-1] || !old.med) continue;
+    tracked++;
+    const cur = h[h.length-1].med;
+    const pct = (cur - old.med) / old.med;
+    const parts = key.split(" | ");
+    const player = parts[0], pr = parts[3];
+    (byPlayer[player] = byPlayer[player] || []).push(pct);
+    const bk = bucketFor(pr);
+    (byBucket[bk] = byBucket[bk] || []).push(pct);
+  }
+  if (!tracked){
+    el.innerHTML = `<p class="small">No trend yet — this builds as you re-scan the same cards over days/weeks.
+      Today's scan is the baseline. Scan again in a few days and movement will appear here.</p>`;
+    return;
+  }
+  const avg = a => a.reduce((s,x)=>s+x,0)/a.length;
+  const fmtPct = p => { const v=p*100; const up=v>0; return `<span class="trend ${Math.abs(v)<1?'flat':(up?'up':'down')}">${up?'▲':v<0?'▼':'→'} ${Math.abs(v).toFixed(1)}%</span>`; };
+  const players = Object.entries(byPlayer).map(([p,a])=>({p, m:avg(a), n:a.length}))
+    .sort((x,y)=> Math.abs(y.m)-Math.abs(x.m));
+  const buckets = ["/1–25","/26–99","/100+","unnumbered"].filter(b=>byBucket[b])
+    .map(b=>({b, m:avg(byBucket[b]), n:byBucket[b].length}));
+  el.innerHTML =
+    `<p class="small">Movement vs ~7 days ago (median price per card). Tracking ${tracked} card identities.</p>
+     <table><tr><th>Player</th><th>Avg move</th><th>Cards</th></tr>` +
+       players.map(r=>`<tr><td><b>${esc(r.p)}</b></td><td>${fmtPct(r.m)}</td><td>${r.n}</td></tr>`).join("") +
+     `</table>
+     <p class="small" style="margin-top:10px"><b>By print-run tier (all players):</b></p>
+     <table><tr><th>Tier</th><th>Avg move</th><th>Cards</th></tr>` +
+       buckets.map(r=>`<tr><td>${r.b}</td><td>${fmtPct(r.m)}</td><td>${r.n}</td></tr>`).join("") +
+     `</table>`;
+}
+function clearHistory(){
+  if (!confirm("Erase all saved price history on this device? This can't be undone.")) return;
+  history = {}; save("cs_history", history); renderTrends();
+}
+
+function processResults(record=false){
+  const all = applyFilters(lastItems);
+  const items = all.filter(it => it.parsed.product);      // LICENSED / recognized products only
+  const hidden = all.length - items.length;               // unlicensed (Leaf/Panini/IP) dropped
+
+  // group by exact card identity
+  const groups = {};
+  for (const it of items) {
+    const key = cardKey(it.player, it.parsed);
+    (groups[key] = groups[key] || []).push(it);
+  }
+
+  if (record) recordHistory(groups);                      // save dated medians (scans only, not FMV edits)
+
+  const strong = [], radar = [];
+  for (const [key, list] of Object.entries(groups)) {
+    const sorted = [...list].sort((a,b)=>totalCost(a)-totalCost(b));
+    const cheapest = sorted[0];
+    const lo = totalCost(sorted[0]), hi = totalCost(sorted[sorted.length-1]);
+    const { fmv, src } = fmvFor(key, list);
+    if (fmv) {
+      const disc = (fmv - totalCost(cheapest)) / fmv;     // PURE: cheapest vs the MARKET (median). Tilt does NOT touch this.
+      const tilt = tiltFor(cheapest.player);             // forward conviction (0.5-1.5)
+      const fwd  = fmv * tilt;                            // 12-mo forward value off market FMV
+      // 2-axis rank: discount today (value) + forward conviction (growth). Both upsides float to top.
+      // disc can be negative (over market); (tilt-1) is the growth tilt above/below neutral.
+      const score = disc + 0.5 * (tilt - 1);
+      const row = { key, item: cheapest, fmv, src, disc, tilt, fwd, score, count: list.length, lo, hi };
+      if (disc >= 0.10 && totalCost(cheapest) >= 3) strong.push(row);   // a real below-market buy
+      else if (disc >= -0.08) radar.push(row);                          // fairly priced — visibility only
+    } else {
+      const tilt = tiltFor(cheapest.player);
+      radar.push({ key, item: cheapest, fmv:null, src:null, disc:null, tilt, fwd:null, score:0.5*(tilt-1), count:list.length, lo, hi, thin:true });
+    }
+  }
+  strong.sort((a,b)=> b.score - a.score);                 // best discount × tier first
+  radar.sort((a,b)=> tiltFor(b.item.player) - tiltFor(a.item.player));
+
+  renderStrong(strong, hidden);
+  renderRadar(radar);
+  renderFmvTable(groups);
+  renderTrends();
+}
+
+/* ============ RENDER ============ */
+function tagRow(p){
+  let h = "";
+  if (p.auto) h += `<span class="tag auto">AUTO</span>`;
+  if (p.printRun) h += `<span class="tag num">/${p.printRun}</span>`;
+  if (p.graded) h += `<span class="tag graded">${p.graded}</span>`;
+  return h;
+}
+function itemRow(it, extra=""){
+  const auction = it.buyingOptions.includes("AUCTION");
+  return `<tr>
+    <td>${it.image?`<img src="${it.image}" width="44" style="border-radius:4px">`:""}</td>
+    <td>${tagRow(it.parsed)}<a href="${it.url}" target="_blank">${esc(it.title)}</a>
+        ${auction?`<span class="tag auct">AUCTION${it.bidCount!=null?" · "+it.bidCount+" bids":""}</span>`:""}
+        <div class="small">${esc(it.parsed.product||"")} ${esc(it.parsed.parallel||"")}</div>
+        ${intelLine(it.player)}</td>
+    <td class="price">$${totalCost(it).toFixed(2)}<div class="small">${it.shipping?`incl $${it.shipping.toFixed(2)} ship`:"free ship"}</div></td>
+    ${extra}
+    <td class="small">${esc(it.seller||"")}${it.feedbackPct?` · ${it.feedbackPct}%`:""}</td>
+  </tr>`;
+}
+
+/* tilt cell: shows the forward-conviction multiplier, the 12-mo forward value, and implied upside */
+function tiltCell(tilt, fwd, fmv){
+  if (tilt == null) tilt = 1.0;
+  const up = tilt > 1.02, down = tilt < 0.98;
+  const cls = up ? "tilt-up" : down ? "tilt-down" : "tilt-flat";
+  const arrow = up ? "▲" : down ? "▼" : "→";
+  const pct = Math.round((tilt - 1) * 100);
+  const pctTxt = pct > 0 ? `+${pct}%` : `${pct}%`;
+  let fwdTxt = "";
+  if (fwd != null && fmv != null){
+    fwdTxt = `<div class="small">$${fmv.toFixed(0)} → <b>$${fwd.toFixed(0)}</b> <span class="${cls}">${pctTxt}</span></div>`;
+  } else {
+    fwdTxt = `<div class="small">set FMV for fwd value</div>`;
+  }
+  return `<span class="tiltbadge ${cls}">${arrow} ${tilt.toFixed(2)}x</span>${fwdTxt}`;
+}
+
+function renderStrong(rows, hidden){
+  const el = document.getElementById("arbResults");
+  const note = hidden ? `<p class="small">🚫 ${hidden} unlicensed / unrecognized listing(s) hidden (Leaf, Panini, in-person, off-brand).</p>` : "";
+  if (!rows.length) { el.innerHTML = note + `<p class="small">No below-market buys in this scan. (Cheapest listings are at or above where each card's market sits.)</p>`; return; }
+  el.innerHTML = note + `<table><tr><th></th><th>Card / Cheapest Listing</th><th>Price</th><th>vs Market (today)</th><th>Tilt → 12mo Fwd</th><th>Seller</th></tr>` +
+    rows.slice(0,30).map(r => {
+      const lab = dealLabel(r.disc);
+      return itemRow(r.item, `<td>
+        <span class="deal ${lab.cls}">${lab.txt}</span> <span class="disc-good">${(r.disc*100).toFixed(0)}% below</span> ${trendChip(r.key)}
+        <div class="small">FMV $${r.fmv.toFixed(2)} (${r.src}) · range $${r.lo.toFixed(2)}–$${r.hi.toFixed(2)} · ${r.count} listed</div></td>
+        <td>${tiltCell(r.tilt, r.fwd, r.fmv)}</td>`);
+    }).join("") + "</table>";
+}
+
+function renderRadar(rows){
+  const el = document.getElementById("fmvResults");
+  if (!rows.length) { el.innerHTML = `<p class="small">Nothing on the radar this scan.</p>`; return; }
+  el.innerHTML = `<table><tr><th></th><th>Card / Cheapest Listing</th><th>Price</th><th>Status (today)</th><th>Tilt → 12mo Fwd</th><th>Seller</th></tr>` +
+    rows.slice(0,30).map(r => {
+      let status;
+      if (r.thin) {
+        status = `<span class="deal d-fair">thin · ${r.count} listed</span>
+          <div class="small">no reliable market median — set your own FMV below</div>`;
+      } else {
+        const lab = dealLabel(r.disc);
+        status = `<span class="deal ${lab.cls}">${lab.txt}</span>
+          <div class="small">FMV $${r.fmv.toFixed(2)} (${r.src}) · range $${r.lo.toFixed(2)}–$${r.hi.toFixed(2)} · ${r.count} listed</div>`;
+      }
+      return itemRow(r.item, `<td>${status}</td><td>${tiltCell(r.tilt, r.fwd, r.fmv)}</td>`);
+    }).join("") + "</table>";
+}
+
+function renderFmvTable(groups){
+  const el = document.getElementById("fmvTable");
+  const keys = Object.keys(groups).sort();
+  if (!keys.length) { el.innerHTML = `<p class="small">Scan first — licensed card identities will appear here.</p>`; return; }
+  el.innerHTML = `<table><tr><th>Card Identity</th><th>Listings</th><th>Lowest Ask</th><th>Market (median)</th><th>Your FMV $ (override)</th></tr>` +
+    keys.map(k => {
+      const list = groups[k];
+      const costs = list.map(totalCost);
+      const low = Math.min(...costs);
+      let fmvCell;
+      if (list.length >= 3)      fmvCell = `<b>$${median(costs).toFixed(2)}</b>`;
+      else if (list.length === 2) fmvCell = `$${median(costs).toFixed(2)} <span style="color:#98a2b3;font-size:10px">(2)</span>`;
+      else                        fmvCell = `<span style="color:#98a2b3">~$${low.toFixed(2)} <span style="font-size:10px">est·1</span></span>`;
+      return `<tr><td class="small">${esc(k)} ${trendChip(k)}</td><td>${list.length}</td>
+        <td class="price">$${low.toFixed(2)}</td>
+        <td class="small">${fmvCell}</td>
+        <td><input class="fmv-input" type="number" placeholder="set" value="${fmvBook[k]??""}"
+             onchange="setFmv('${k.replace(/'/g,"\\'")}', this.value)"></td></tr>`;
+    }).join("") + "</table>";
+}
+function setFmv(key, val){
+  if (val === "" || +val <= 0) delete fmvBook[key]; else fmvBook[key] = +val;
+  save("cs_fmv", fmvBook);
+  processResults();
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+</script>
+</body>
+</html>
