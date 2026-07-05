@@ -180,6 +180,7 @@
         <option value="199">/199</option><option value="99" selected>/99</option>
         <option value="50">/50</option><option value="25">/25</option>
       </select></label>
+      <label>Min price $<input id="fMinPrice" type="number" value="3" style="width:60px; padding:4px"></label>
       <label>Max price $<input id="fMaxPrice" type="number" value="150" style="width:70px; padding:4px"></label>
       <label>Type <select id="fBuying">
         <option value="ALL">All</option>
@@ -530,22 +531,31 @@ function interpretPlayer(name, stats, statcast, newsItems){
   // level label: "" for MLB, "AAA · " / "AA · " etc for minors (so a stat's level is always clear)
   const lvl = (stats && stats.level && stats.level !== "MLB") ? (stats.level + " · ") : "";
 
-  // ---- STATCAST (underlying skill) ----
+  // ---- STATCAST (underlying skill) — PITCHER-AWARE ----
+  // For batters, these numbers describe the contact they MAKE (high = good).
+  // For pitchers, the same columns describe the contact they ALLOW (high = bad) — flip the sign.
   if (statcast){
+    const isPitcher = statcast.__type === "pitcher";
     const xwoba = parseFloat(statcast.xwoba);
     const barrel = parseFloat(statcast.barrel_batted_rate);
     const ev = parseFloat(statcast.exit_velocity_avg);
     const hh = parseFloat(statcast.hard_hit_percent);
     const bits = [];
-    if (!isNaN(xwoba)) bits.push(`xwOBA ${statcast.xwoba}`);
-    if (!isNaN(barrel)) bits.push(`barrel ${barrel}%`);
-    if (!isNaN(ev)) bits.push(`EV ${ev}`);
-    if (!isNaN(hh)) bits.push(`HH ${hh}%`);
-    // strong underlying contact -> upward; weak -> downward. Thresholds are deliberately mild.
+    if (!isNaN(xwoba)) bits.push(`xwOBA${isPitcher?" against":""} ${statcast.xwoba}`);
+    if (!isNaN(barrel)) bits.push(`barrel${isPitcher?" against":""} ${barrel}%`);
+    if (!isNaN(ev)) bits.push(`EV${isPitcher?" against":""} ${ev}`);
+    if (!isNaN(hh)) bits.push(`HH${isPitcher?" against":""} ${hh}%`);
     if (!isNaN(barrel) && !isNaN(ev)){
-      if (barrel >= 12 || ev >= 92){ statDelta += 0.04; drivers.push({k:"statcast", dir:"+", txt:`Strong contact (${bits.join(", ")})`}); }
-      else if (barrel <= 5 && ev <= 88){ statDelta -= 0.04; drivers.push({k:"statcast", dir:"-", txt:`Soft contact (${bits.join(", ")})`}); }
-      else drivers.push({k:"statcast", dir:"0", txt:`Statcast: ${bits.join(", ")}`});
+      if (!isPitcher){
+        if (barrel >= 12 || ev >= 92){ statDelta += 0.04; drivers.push({k:"statcast", dir:"+", txt:`Strong contact (${bits.join(", ")})`}); }
+        else if (barrel <= 5 && ev <= 88){ statDelta -= 0.04; drivers.push({k:"statcast", dir:"-", txt:`Soft contact (${bits.join(", ")})`}); }
+        else drivers.push({k:"statcast", dir:"0", txt:`Statcast: ${bits.join(", ")}`});
+      } else {
+        // PITCHER: inducing weak contact is GOOD; getting barreled is BAD
+        if (barrel <= 6 && ev <= 88.5){ statDelta += 0.04; drivers.push({k:"statcast", dir:"+", txt:`Inducing weak contact (${bits.join(", ")})`}); }
+        else if (barrel >= 10 || ev >= 91.5){ statDelta -= 0.04; drivers.push({k:"statcast", dir:"-", txt:`Getting barreled (${bits.join(", ")})`}); }
+        else drivers.push({k:"statcast", dir:"0", txt:`Statcast: ${bits.join(", ")}`});
+      }
     } else if (bits.length){
       drivers.push({k:"statcast", dir:"0", txt:`Statcast: ${bits.join(", ")}`});
     }
@@ -676,6 +686,23 @@ function interpretPlayer(name, stats, statcast, newsItems){
       else { subjectIsThisPlayer = false; subjectKnown = false; } // unknown subject -> ignore
       if (!subjectIsThisPlayer) continue;
 
+      // MULTI-PLAYER SENTENCE GUARD: roundup sentences ("Milwaukee's IL includes X, Y, Z...")
+      // name several tracked players at once — scoring them misattributes credit/blame to
+      // everyone listed. If 2+ tracked players appear in this sentence, don't score it.
+      let namedCount = 0;
+      if (typeof ALL_WATCH_NAMES !== "undefined"){
+        for (const wn of ALL_WATCH_NAMES){
+          const wp = wn.split(/\s+/).filter(Boolean);
+          const wl = wp[wp.length-1];
+          if (wl && s.includes(wl)) namedCount++;
+          if (namedCount >= 2) break;
+        }
+      }
+      if (namedCount >= 2){
+        drivers.push({k:"news", dir:"0", txt:`multi-player mention (not scored — review): "${rawSent.trim().slice(0,90)}" (${it.source||"news"})`});
+        continue;
+      }
+
       const snip = rawSent.trim().slice(0,90);
       // rehab handling within this sentence
       if (REHAB_RE.test(s)){
@@ -739,9 +766,13 @@ async function refreshIntel(){
     const statsByName = {};
     for (const p of (statsResp.players||[])) if (p.found) statsByName[(p.query||"").toLowerCase()] = p;
     const scByName = {};
-    for (const p of [...(scBat.players||[]), ...(scPit.players||[])]){
+    for (const p of (scBat.players||[])){
       const nm = (p["last_name, first_name"]||"").toLowerCase(); // "last, first"
-      scByName[nm] = p;
+      scByName[nm] = { ...p, __type: "batter" };
+    }
+    for (const p of (scPit.players||[])){
+      const nm = (p["last_name, first_name"]||"").toLowerCase();
+      scByName[nm] = { ...p, __type: "pitcher" };   // pitcher row wins if a name is in both
     }
     function matchStatcast(name){
       const parts = name.toLowerCase().split(/\s+/);
@@ -1037,20 +1068,36 @@ function cardKey(player, parsed){
 /* ============ SCANNING ============ */
 function setStatus(s){ document.getElementById("status").textContent = s; }
 
-async function fetchListings(query){
+async function fetchListings(query, offset = 0){
   const base = localStorage.getItem("cs_worker");
   if (!base) { setStatus("⚠️ Set your Worker URL in Setup first."); throw new Error("no worker"); }
   const params = new URLSearchParams({
     q: query,
     limit: "200",
+    offset: String(offset),
     buyingOptions: document.getElementById("fBuying").value,
   });
   const maxPrice = document.getElementById("fMaxPrice").value;
   if (maxPrice) params.set("maxPrice", maxPrice);
+  const minPriceEl = document.getElementById("fMinPrice");
+  const minPrice = minPriceEl ? minPriceEl.value : "";
+  if (minPrice && +minPrice > 0) params.set("minPrice", minPrice);
   const resp = await fetch(`${base}/search?${params}`);
   const data = await resp.json();
   if (data.error) throw new Error(JSON.stringify(data.error));
   return data.items || [];
+}
+
+// Pull up to two pages (400 listings) per query: a full first page means there is
+// more investable inventory above it — grab the second page too.
+async function fetchListingsDeep(query){
+  const page1 = await fetchListings(query, 0);
+  if (page1.length < 200) return page1;
+  await new Promise(r => setTimeout(r, 200));
+  try {
+    const page2 = await fetchListings(query, 200);
+    return [...page1, ...page2];
+  } catch(e){ return page1; }
 }
 
 async function scanAll(){
@@ -1065,7 +1112,7 @@ async function scanAll(){
       setStatus(`Scanning ${i+1}/${targets.length}: ${w.player}…`);
       const q = [w.player, w.keywords].filter(Boolean).join(" ");   // player (+ optional keywords); no OR-expansion (it lets eBay match non-player cards)
       try {
-        const items = await fetchListings(q);
+        const items = await fetchListingsDeep(q);
         for (const it of items) {
           // require the player's last name in the title to cut noise
           const lastName = w.player.trim().split(/\s+/).slice(-1)[0].toLowerCase();
