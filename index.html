@@ -1068,13 +1068,14 @@ function cardKey(player, parsed){
 /* ============ SCANNING ============ */
 function setStatus(s){ document.getElementById("status").textContent = s; }
 
-async function fetchListings(query, offset = 0){
+async function fetchListings(query, offset = 0, sort = "price"){
   const base = localStorage.getItem("cs_worker");
   if (!base) { setStatus("⚠️ Set your Worker URL in Setup first."); throw new Error("no worker"); }
   const params = new URLSearchParams({
     q: query,
     limit: "200",
     offset: String(offset),
+    sort: sort,
     buyingOptions: document.getElementById("fBuying").value,
   });
   const maxPrice = document.getElementById("fMaxPrice").value;
@@ -1088,16 +1089,20 @@ async function fetchListings(query, offset = 0){
   return data.items || [];
 }
 
-// Pull up to two pages (400 listings) per query: a full first page means there is
-// more investable inventory above it — grab the second page too.
+// TWO-DIRECTION SCAN: one pass sweeps bottom-up from the min price (catches cheap
+// deals), one pass sweeps TOP-DOWN from the max price (catches the numbered cards
+// and autos that price-ascending can never reach on high-volume star players).
+// Results are merged and de-duplicated by listing id.
 async function fetchListingsDeep(query){
-  const page1 = await fetchListings(query, 0);
-  if (page1.length < 200) return page1;
-  await new Promise(r => setTimeout(r, 200));
-  try {
-    const page2 = await fetchListings(query, 200);
-    return [...page1, ...page2];
-  } catch(e){ return page1; }
+  const asc = await fetchListings(query, 0, "price");
+  let desc = [];
+  if (asc.length >= 200) {                       // full cheap page -> there's more above it
+    await new Promise(r => setTimeout(r, 200));
+    try { desc = await fetchListings(query, 0, "-price"); } catch(e){ /* keep asc */ }
+  }
+  if (!desc.length) return asc;
+  const seen = new Set(asc.map(i => i.id));
+  return [...asc, ...desc.filter(i => !seen.has(i.id))];
 }
 
 async function scanAll(){
@@ -1115,8 +1120,10 @@ async function scanAll(){
         const items = await fetchListingsDeep(q);
         for (const it of items) {
           // require the player's last name in the title to cut noise
-          const lastName = w.player.trim().split(/\s+/).slice(-1)[0].toLowerCase();
-          if (!it.title.toLowerCase().includes(lastName)) continue;
+          // (normalized: accents stripped, periods stripped — "Peña"≈"Pena", "J.D."≈"JD")
+          const normTxt = s => String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\./g,"");
+          const lastName = normTxt(w.player).trim().split(/\s+/).slice(-1)[0];
+          if (!normTxt(it.title).includes(lastName)) continue;
           lastItems.push({ ...it, player: w.player, parsed: parseTitle(it.title) });
         }
       } catch(e) { console.warn("scan error", w.player, e); }
