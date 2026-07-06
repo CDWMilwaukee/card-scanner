@@ -163,6 +163,7 @@
       <select id="newGroup"><option>Prospects</option><option>Roster</option></select>
       <button onclick="addPlayer()">Add</button>
       <button class="secondary" onclick="restoreDefaults()">↺ Restore Full Brewers List</button>
+      <button class="secondary" onclick="syncRoster()">⟳ Sync 26-man from MLB</button>
     </div>
     <div id="watchlist"></div>
   </div>
@@ -258,12 +259,10 @@
 <script>
 /* ============ STATE ============ */
 const DEFAULT_WATCHLIST = [
-  // ===== TOP 30 PROSPECTS (MLB Pipeline 2026) =====
+  // ===== TOP 30 PROSPECTS (MLB Pipeline 2026, July-adjusted) =====
   { player: "Jesus Made", keywords: "bowman", group: "Prospects" },
   { player: "Luis Pena", keywords: "brewers bowman", group: "Prospects" },
   { player: "Jett Williams", keywords: "", group: "Prospects" },
-  { player: "Cooper Pratt", keywords: "", group: "Prospects" },
-  { player: "Brandon Sproat", keywords: "", group: "Prospects" },
   { player: "Andrew Fischer", keywords: "bowman", group: "Prospects" },
   { player: "Logan Henderson", keywords: "brewers", group: "Prospects" },
   { player: "Jeferson Quero", keywords: "", group: "Prospects" },
@@ -276,32 +275,46 @@ const DEFAULT_WATCHLIST = [
   { player: "Brady Ebel", keywords: "", group: "Prospects" },
   { player: "JD Thompson", keywords: "brewers", group: "Prospects" },
   { player: "Tyson Hardin", keywords: "", group: "Prospects" },
+  { player: "Blake Burke", keywords: "brewers", group: "Prospects" },
   { player: "Brock Wilken", keywords: "", group: "Prospects" },
-  { player: "Diego Frontado", keywords: "", group: "Prospects" },
   { player: "Shane Drohan", keywords: "", group: "Prospects" },
-  { player: "Coleman Crow", keywords: "", group: "Prospects" },
+  { player: "Diego Frontado", keywords: "", group: "Prospects" },
+  { player: "Eric Bitonti", keywords: "", group: "Prospects" },
   { player: "Craig Yoho", keywords: "", group: "Prospects" },
   { player: "Josh Knoth", keywords: "", group: "Prospects" },
-  { player: "Eric Bitonti", keywords: "", group: "Prospects" },
   { player: "Frank Cairone", keywords: "", group: "Prospects" },
-  { player: "Blake Burke", keywords: "brewers", group: "Prospects" },
+  { player: "Yeremi Frias", keywords: "brewers", group: "Prospects" },
+  { player: "Dylan O'Rae", keywords: "", group: "Prospects" },
+  { player: "Ethan Dorchies", keywords: "", group: "Prospects" },
   { player: "Handelfry Encarnacion", keywords: "bowman", group: "Prospects" },
-  // ===== MLB ROSTER (lineup + rotation) =====
+  { player: "Carlos Rodriguez", keywords: "brewers bowman", group: "Prospects" },
+  // ===== 26-MAN ROSTER (Opening Day 2026 + known July changes; use Sync button for live) =====
   { player: "William Contreras", keywords: "", group: "Roster" },
+  { player: "Gary Sanchez", keywords: "", group: "Roster" },
   { player: "Andrew Vaughn", keywords: "", group: "Roster" },
   { player: "Brice Turang", keywords: "", group: "Roster" },
+  { player: "Cooper Pratt", keywords: "", group: "Roster" },
   { player: "Joey Ortiz", keywords: "brewers", group: "Roster" },
-  { player: "Christian Yelich", keywords: "", group: "Roster" },
+  { player: "David Hamilton", keywords: "brewers", group: "Roster" },
+  { player: "Jake Bauers", keywords: "", group: "Roster" },
   { player: "Jackson Chourio", keywords: "", group: "Roster" },
   { player: "Sal Frelick", keywords: "", group: "Roster" },
+  { player: "Christian Yelich", keywords: "", group: "Roster" },
   { player: "Garrett Mitchell", keywords: "", group: "Roster" },
-  { player: "Jake Bauers", keywords: "", group: "Roster" },
+  { player: "Brandon Lockridge", keywords: "", group: "Roster" },
   { player: "Jacob Misiorowski", keywords: "", group: "Roster" },
   { player: "Kyle Harrison", keywords: "brewers", group: "Roster" },
   { player: "Chad Patrick", keywords: "", group: "Roster" },
-  { player: "Robert Gasser", keywords: "", group: "Roster" },
-  { player: "Quinn Priester", keywords: "", group: "Roster" },
   { player: "Brandon Woodruff", keywords: "", group: "Roster" },
+  { player: "Brandon Sproat", keywords: "", group: "Roster" },
+  { player: "Coleman Crow", keywords: "", group: "Roster" },
+  { player: "Trevor Megill", keywords: "", group: "Roster" },
+  { player: "Jake Woodford", keywords: "", group: "Roster" },
+  { player: "Craig Kimbrel", keywords: "", group: "Roster" },
+  { player: "Brent Suter", keywords: "", group: "Roster" },
+  { player: "Aaron Civale", keywords: "", group: "Roster" },
+  { player: "Chris Martin", keywords: "brewers", group: "Roster" },
+  { player: "Camilo Doval", keywords: "", group: "Roster" },
 ];
 let watchlist = load("cs_watchlist", DEFAULT_WATCHLIST);
 // migrate old saved lists that lack group tags
@@ -984,6 +997,21 @@ function restoreDefaults(){
 }
 function removePlayer(i){
   watchlist.splice(i,1); save("cs_watchlist", watchlist); renderWatchlist();
+}
+// Pull the CURRENT active 26-man from MLB (via the worker) and replace the Roster group.
+// Prospects group is untouched. Names come straight from the MLB Stats API — no drift.
+async function syncRoster(){
+  if (!confirm("Replace the Roster group with the current live Brewers 26-man from MLB? Prospects are untouched.")) return;
+  try {
+    const data = await workerGet("/roster");
+    if (!data.players || !data.players.length){ alert("MLB roster came back empty — try again in a minute."); return; }
+    const prospects = watchlist.filter(w => w.group !== "Roster");
+    const roster = data.players.map(p => ({ player: p.name, keywords: "", group: "Roster" }));
+    watchlist = [...prospects, ...roster];
+    save("cs_watchlist", watchlist);
+    renderWatchlist();
+    setStatus(`Roster synced — ${roster.length} players from MLB active roster.`);
+  } catch(e){ alert("Sync error: " + e.message); }
 }
 renderWatchlist();
 renderBrainPanel();
