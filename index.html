@@ -70,6 +70,35 @@
   .intel-head .arrow.tilt-up { color:#1a7f37; }
   .intel-head .arrow.tilt-down { color:#b42318; }
   .intel-drivers { display:flex; flex-direction:column; gap:4px; margin-bottom:8px; }
+  .intel-math { font-size:12px; color:#475467; background:#f7f8fa; border:1px solid #eceef2; border-radius:6px; padding:6px 10px; margin-bottom:8px; line-height:1.7; }
+  .intel-math .op { color:#98a2b3; font-weight:700; margin:0 2px; }
+  .intel-math .clamp { color:#b54708; }
+  .intel-math b { color:#1d2939; }
+  .cc-card { margin-top:12px; border:1px solid #e2e6ec; border-radius:10px; padding:14px; background:#fbfcfe; }
+  .cc-head { font-weight:700; margin-bottom:4px; }
+  .cc-verdict { font-weight:700; padding:8px 12px; border-radius:6px; margin-bottom:8px; }
+  .cc-good { background:#eafaf0; color:#1a6e32; }
+  .cc-fair { background:#eef0f3; color:#475467; }
+  .cc-bad  { background:#fde2e2; color:#b42318; }
+  .cc-tilt { background:#f0f4ff; color:#3a4a8a; padding:6px 12px; border-radius:6px; font-weight:600; margin-bottom:8px; }
+  .cc-alt  { background:#fff8e6; color:#8a6a00; padding:6px 12px; border-radius:6px; margin-bottom:8px; }
+  .cc-best { background:#eafaf0; color:#1a6e32; padding:8px 12px; border-radius:6px; margin:8px 0; font-weight:600; }
+  .cc-since { padding:6px 12px; border-radius:6px; margin-bottom:8px; font-weight:600; font-size:13px; }
+  .cc-up { background:#eafaf0; color:#1a6e32; }
+  .cc-down { background:#fde7e7; color:#b42318; }
+  .cc-agg { background:#f0f4ff; color:#3a4a8a; padding:6px 12px; border-radius:6px; margin-bottom:8px; font-size:13px; }
+  .cc-ladder { width:100%; border-collapse:collapse; font-size:13px; margin-top:4px; }
+  .cc-ladder th, .cc-ladder td { text-align:left; padding:5px 8px; border-bottom:1px solid #eef0f3; }
+  .cc-ladder th { color:#667085; font-weight:600; }
+  .cc-mine { background:#eef6ff; font-weight:700; }
+  .cc-ladder a, .cc-best a, .cc-alt a { color:#1a5fb4; text-decoration:none; font-weight:600; }
+  .cc-ladder a:hover, .cc-best a:hover, .cc-alt a:hover { text-decoration:underline; }
+  .cc-years { margin-top:10px; font-size:13px; }
+  .cc-years summary { cursor:pointer; color:#3a4a8a; font-weight:600; padding:4px 0; }
+  .cc-grade { background:#fef6e7; color:#92600a; padding:8px 12px; border-radius:6px; margin:8px 0; font-weight:600; font-size:13px; }
+  .cc-cross { background:#eafaf0; color:#1a6e32; padding:8px 12px; border-radius:6px; margin:8px 0; font-weight:600; font-size:13px; }
+  .cc-cross a { color:#1a5fb4; text-decoration:none; font-weight:700; }
+  .cc-cross a:hover { text-decoration:underline; }
   .drv { font-size:12px; padding:3px 8px; border-radius:5px; }
   .drv.tilt-up { background:#eafaf0; color:#1a6e32; }
   .drv.tilt-down { background:#fdeeee; color:#a01f16; }
@@ -104,6 +133,13 @@
   @media (max-width: 640px) {
     th:nth-child(5), td:nth-child(5) { display: none; } /* hide seller col on phone */
   }
+  .rangeWrap { position:relative; width:220px; height:24px; }
+  .rangeWrap input[type=range]{ position:absolute; top:0; left:0; width:100%; margin:0; -webkit-appearance:none; appearance:none; background:transparent; pointer-events:none; height:24px; }
+  .rangeWrap input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; pointer-events:auto; width:16px; height:16px; border-radius:50%; background:#1a5fb4; border:2px solid #fff; box-shadow:0 1px 3px rgba(0,0,0,.3); cursor:pointer; margin-top:-7px; }
+  .rangeWrap input[type=range]::-moz-range-thumb{ pointer-events:auto; width:16px; height:16px; border-radius:50%; background:#1a5fb4; border:2px solid #fff; cursor:pointer; }
+  .rangeWrap input[type=range]::-webkit-slider-runnable-track{ height:3px; background:#d0d4dc; border-radius:2px; }
+  .rangeWrap input[type=range]::-moz-range-track{ height:3px; background:#d0d4dc; border-radius:2px; }
+  .rangeWrap input[type=range]:focus{ outline:none; }
 </style>
 </head>
 <body>
@@ -181,8 +217,8 @@
         <option value="199">/199</option><option value="99" selected>/99</option>
         <option value="50">/50</option><option value="25">/25</option>
       </select></label>
-      <label>Min price $<input id="fMinPrice" type="number" value="3" style="width:60px; padding:4px"></label>
-      <label>Max price $<input id="fMaxPrice" type="number" value="150" style="width:70px; padding:4px"></label>
+      <label>Min price $<input id="fMinPrice" type="number" value="2" style="width:60px; padding:4px" title="Filters out $0.99 base-common junk at the eBay level"></label>
+      <label>Max price $<input id="fMaxPrice" type="number" value="250" style="width:70px; padding:4px"></label>
       <label>Type <select id="fBuying">
         <option value="ALL">All</option>
         <option value="FIXED_PRICE" selected>BIN / Best Offer</option>
@@ -200,15 +236,69 @@
       <button class="secondary" onclick="scanOneOff()">Search</button>
     </div>
     <div class="status" id="status"></div>
+    <div style="margin-top:14px; padding-top:14px; border-top:2px dashed #d0d4dc">
+      <div style="font-weight:700; font-size:14px; margin-bottom:6px">🔎 Card Check — paste a listing title for an instant verdict</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+        <input id="cardCheckInput" placeholder="e.g. 2026 Bowman Paper Brandon Sproat Orange /25 #33 New York Mets" style="flex:1; min-width:320px">
+        <input id="cardCheckPrice" type="number" placeholder="asking $ (optional)" style="width:130px">
+        <button onclick="cardCheck()">Check</button>
+      </div>
+      <div class="small" style="margin-top:4px; color:#667085">Parses player + parallel + print run, pulls the live parallel ladder from eBay, and rates the price vs comps + your tilt.</div>
+    </div>
+    <div id="cardCheckResult"></div>
   </div>
 
   <!-- RESULTS: STRONG BUYS -->
   <div class="panel">
     <h2>🎯 Strong Buys — below market</h2>
     <p class="small">Licensed cards where the cheapest listing sits below where the rest of that exact
-    card's market sits (median of all its active listings, or your override FMV). Ranked by discount
-    × player tier, so an ace floats above a filler at the same discount.</p>
+    card's market sits (median of all its active listings, or your override FMV). Sorted by discount,
+    deepest first.</p>
+    <div id="discFilterWrap" style="display:none; align-items:center; gap:10px; margin:6px 0 12px; flex-wrap:wrap">
+      <label class="small" style="font-weight:600">Discount band:</label>
+      <div class="rangeWrap">
+        <input id="discMin" type="range" min="10" max="80" step="1" value="10" oninput="onDiscFilter('min')">
+        <input id="discMax" type="range" min="10" max="80" step="1" value="80" oninput="onDiscFilter('max')">
+      </div>
+      <span id="discFilterVal" class="small" style="font-weight:700; min-width:90px">10% – 80%+</span>
+      <span id="discFilterCount" class="small" style="color:#667085"></span>
+      <button class="secondary" style="padding:2px 10px; font-size:12px" onclick="resetDiscFilter()">Reset</button>
+    </div>
     <div id="arbResults"><p class="small">Run a scan.</p></div>
+  </div>
+
+  <!-- RESULTS: SCARCITY ARBITRAGE -->
+  <div class="panel">
+    <h2>⚖️ Scarcity Arbitrage — scarcer cards priced too cheap</h2>
+    <p class="small">Within the same player + year + product + auto status, a scarcer card should cost
+    more than a looser one — but the market prices rarity on a <b>dampened curve</b> (≈rarity^0.65), not
+    linearly. A /50 is 3× scarcer than a /150 but typically trades ~1.7×. These are scarcer cards priced
+    below that parity vs a looser tier of the exact same card. Unnumbered autos treated as /800.</p>
+    <div id="arbControls" style="display:none; gap:10px; margin:8px 0 12px; flex-wrap:wrap; align-items:center">
+      <label class="small" style="font-weight:600">Player:</label>
+      <select id="arbPlayer" onchange="renderArbFromCache()" style="min-width:140px"><option value="ALL">All players</option></select>
+      <label class="small" style="font-weight:600">Anchor (looser):</label>
+      <select id="arbAnchor" onchange="renderArbFromCache()">
+        <option value="ANY">Any (cheapest looser)</option>
+        <option value="499">/499</option><option value="299">/299</option><option value="250">/250</option>
+        <option value="199">/199</option><option value="175">/175</option><option value="150">/150</option>
+        <option value="125">/125</option><option value="99">/99</option><option value="75">/75</option>
+        <option value="50">/50</option>
+      </select>
+      <label class="small" style="font-weight:600">Target (scarcer):</label>
+      <select id="arbTarget" onchange="renderArbFromCache()">
+        <option value="ANY">Any scarcer</option>
+        <option value="99">/99</option><option value="75">/75</option><option value="50">/50</option>
+        <option value="25">/25</option><option value="15">/15</option><option value="10">/10</option>
+        <option value="5">/5</option><option value="1">/1</option>
+      </select>
+      <span style="display:flex; align-items:center; gap:6px">
+        <label class="small" style="font-weight:600">Min below parity:</label>
+        <input id="arbMinDisc" type="range" min="1" max="25" step="1" value="1" oninput="renderArbFromCache()" style="width:120px">
+        <span id="arbMinDiscVal" class="small" style="font-weight:700; min-width:32px">1%</span>
+      </span>
+    </div>
+    <div id="scarcityArbResults"><p class="small">Run a scan.</p></div>
   </div>
 
   <!-- RESULTS: ON THE RADAR -->
@@ -221,12 +311,13 @@
 
   <!-- TRENDS -->
   <div class="panel">
-    <h2>🧠 Intel — live stats / Statcast / news → tilt suggestions</h2>
+    <h2>🧠 Intel — live stats / Statcast → tilt suggestions (news handled in chat)</h2>
     <div class="row" style="margin-bottom:8px">
       <button id="intelBtn" onclick="refreshIntel()">🔄 Refresh Intel</button>
+      <button onclick="resetIntelOverrides()" style="background:#fff;border:1px solid #d0d5dd">🗑️ Reset intel overrides → use brain</button>
       <span id="intelStatus" class="small">Pulls everything since your last refresh, then proposes tilt changes for your review.</span>
     </div>
-    <div id="intelPanel"><p class="small">No suggestions yet. Click “Refresh Intel” to pull the latest stats, Statcast & news.</p></div>
+    <div id="intelPanel"><p class="small">No suggestions yet. Click “Refresh Intel” to pull the latest stats & Statcast.</p></div>
   </div>
 
   <div class="panel">
@@ -319,8 +410,20 @@ const DEFAULT_WATCHLIST = [
 let watchlist = load("cs_watchlist", DEFAULT_WATCHLIST);
 // migrate old saved lists that lack group tags
 watchlist = watchlist.map(w => ({ group: "Prospects", ...w }));
+// Auto-exclude players no longer with the Brewers (in case they linger in a saved watchlist).
+// Delete the chips in the UI to remove permanently; this is a safety net so they don't generate
+// flags in the meantime. Add a name here (lowercase) when a player is traded/released.
+const EX_BREWERS = new Set(["devin williams","aaron civale","craig kimbrel","camilo doval","chris martin"]);
+const _wlBefore = watchlist.length;
+watchlist = watchlist.filter(w => !EX_BREWERS.has((w.player||"").toLowerCase().trim()));
+if (watchlist.length < _wlBefore){
+  console.log(`Skipped ${_wlBefore - watchlist.length} non-Brewers from watchlist (delete the chips to remove permanently): ` +
+    [...EX_BREWERS].join(", "));
+}
 let fmvBook = load("cs_fmv", {});   // { cardKey: dollars }
 let history = load("cs_history", {}); // { cardKey: [ {d, med, low, n}, ... ] } — price trend over time
+let cardCheckLog = load("cs_cardCheckLog", {}); // { checkKey: [ {d, med, low, n, tilt} ] } — Card Check history over time
+let playerAgg = load("cs_playerAgg", {}); // { player: [ {d, med, low, n} ] } — ALL licensed cards of a player, general price movement
 let tiltOverride = load("cs_tiltOverride", {});   // { "player name": {tilt, note, ts} } — accepted intel changes persist here
 let intelLog = load("cs_intelLog", {});           // { "player name": [ {ts, tilt, drivers[]} ] } — conviction history over time
 let lastIntelPull = localStorage.getItem("cs_lastIntelPull") || "";
@@ -334,30 +437,31 @@ function save(k, v){ localStorage.setItem(k, JSON.stringify(v)); }
    posture codes: HOLD∞ | HOLD | BUY | VALUE | SELL | FLIER | AVOID  */
 const PLAYER_BRAIN = {
   // ----- MLB ROSTER -----
-  "jackson chourio":   { team:"Brewers", tier:"Cornerstone", traj:"↑", posture:"HOLD∞", tilt:1.45, note:"Cornerstone — never sell into a slump; edge is same-card arbitrage, not mispricing. 21yo, 40+ HR ceiling, club control through 2033." },
-  "jacob misiorowski": { team:"Brewers", tier:"Emerging Ace", traj:"↑", posture:"HOLD∞", tilt:1.50, note:"🔥 1.34 ERA (1st MLB), .151 opp avg (lowest), 103.7mph fastest pitch on record. Don't chase the spike; refresh FMV weekly. Hold /25 & rarer." },
-  "kyle harrison":     { team:"Brewers", cardTeams:["Giants"], tier:"Breakout SP", traj:"↑", posture:"BUY", tilt:1.40, note:"BUY-SIGNAL: cards say Giants + pre-breakout pricing; real breakout (1.57 ERA), repricing lag." },
+  "jackson chourio":   { team:"Brewers", tier:"Cornerstone", traj:"↑", posture:"HOLD∞", tilt:1.50, note:"[6/26 -> 1.50 cap] STATS +0.05: strong contact (barrel 13.8%, EV 92.4), .870 OPS/10 HR; cooling last7 .517 but irrelevant at cap. NEWS 0: broke out in 2026. Cornerstone — never sell into a slump; edge is same-card arbitrage. 21yo, 40+ HR ceiling, control thru 2033." },
+  "jacob misiorowski": { team:"Brewers", tier:"Emerging Ace", traj:"↑", posture:"HOLD∞", tilt:1.50, note:"[6/26 -> 1.50 cap] STATS +0.05: 1.45 ERA, 138 K, .224 opp xwOBA (elite suppression; engine mislabels as soft contact), 12-K no-hit bid, ERA last7 0.55. NEWS 0: historic season. Don t chase the spike; refresh FMV weekly. Hold /25 & rarer." },
+  "kyle harrison":     { team:"Brewers", cardTeams:["Giants"], tier:"Breakout SP", traj:"↑", posture:"BUY", tilt:1.47, note:"[6/26 -> 1.47] STATS +0.02: xwOBA-against .282, 2.50 ERA, 87 K — quality MLB starter confirmed. NEWS 0: combined 3-hitter vs LAD. Cards still say Giants -> repricing lag; BUY." },
   "brandon woodruff":  { team:"Brewers", tier:"Vet Ace (rehab)", traj:"⚕", posture:"HOLD", tilt:1.10, note:"Comeback bet — spikes on a good return start, craters on a setback. Watch the return." },
   "quinn priester":    { team:"Brewers", tier:"Mid SP (injured)", traj:"⚕", posture:"AVOID", tilt:0.55, note:"Season in jeopardy (thoracic outlet) + FIP regression — cheap fliers only." },
   "robert gasser":     { team:"Brewers", tier:"Depth SP", traj:"→", posture:"FLIER", tilt:0.70, note:"TJ-return depth; autos at deep discount only." },
   "chad patrick":      { team:"Brewers", tier:"Depth", traj:"→", posture:"FLIER", tilt:0.65, note:"Minimal card market — cheap org fliers only." },
-  "william contreras": { team:"Brewers", tier:"Star C", traj:"→", posture:"HOLD", tilt:1.15, note:"Elite catcher in his prime; stable floor, slow steady appreciation. 2x AS, 2x SS, WS '21." },
-  "christian yelich":  { team:"Brewers", tier:"HOF-Legacy", traj:"↓", posture:"HOLD", tilt:0.90, note:"Legacy autos (MVP '18, 2x batting champ) hold; bat fading at 34 — don't chase modern high-print." },
-  "brice turang":      { team:"Brewers", tier:"Regular ↑", traj:"↑", posture:"BUY", tilt:1.25, note:"Two-way value trending up (GG '24, All-MLB 2nd '25); often underpriced — good discount target." },
-  "joey ortiz":        { team:"Brewers", tier:"Glove SS", traj:"↓", posture:"VALUE", tilt:0.80, note:"Bat struggling + Pratt call-up pushes him to 3B timeshare; defense-driven cap — cheap autos only." },
-  "garrett mitchell":  { team:"Brewers", tier:"Toolsy/Risk", traj:"?", posture:"FLIER", tilt:0.85, note:"Elite tools but injury-capped — cheap upside bets only, don't over-allocate." },
-  "andrew vaughn":     { team:"Brewers", cardTeams:["White Sox"], tier:"Regular", traj:"→", posture:"VALUE", tilt:0.80, note:"Cards say White Sox; .428 wOBA is a mirage (3.7% barrel, regression flag) — don't pay up." },
-  "sal frelick":       { team:"Brewers", tier:"Regular", traj:"→", posture:"VALUE", tilt:0.95, note:"GG '24; low power ceiling caps card ceiling, but high exit-velo/xwOBA hints at upside — discount or skip." },
-  "jake bauers":       { team:"Brewers", tier:"Momentum", traj:"🔥", posture:"SELL", tilt:0.60, note:"Ride & EXIT — age-30 breakout, regression base case; TRIM high-print non-autos, don't accumulate." },
-  "luis rengifo":      { team:"Brewers", tier:"Utility (cold)", traj:"↓", posture:"AVOID", tilt:0.60, note:".205/.280/.254 in 2026 — DFA candidate with Pratt up. Minimal card market; pass." },
-  "gary sanchez":      { team:"Brewers", tier:"Backup C", traj:"→", posture:"FLIER", tilt:0.75, note:"Veteran backup catcher; legacy-name liquidity only — cheap." },
+  "william contreras": { team:"Brewers", tier:"Star C", traj:"↑", posture:"HOLD", tilt:1.32, note:"[6/26 -> 1.32] STATS +0.05: xwOBA .354, heating hard (OPS .881->1.231 last7). NEWS +0.02: 4-hit game, back-to-back HRs w/ Bauers, on-base machine atop a 49-29 club. Elite catcher in prime; 2x AS, 2x SS." },
+  "christian yelich":  { team:"Brewers", tier:"HOF-Legacy", traj:"↓", posture:"HOLD", tilt:0.83, note:"[6/26 -> 0.83] STATS -0.05: cooling (OPS .719->.518 last7), xwOBA .297. NEWS 0. Legacy autos (MVP 18, 2x batting champ) hold; bat fading at 34 — don t chase modern high-print." },
+  "brice turang":      { team:"Brewers", tier:"Regular ↑", traj:"↑", posture:"BUY", tilt:1.22, note:"[6/26 -> 1.22 CORRECTED] STATS -0.03: mild cool (OPS .724->.636). NEWS +context: 11 HR + .374 OBP up-the-middle = strong year; an override had drifted him to ~1.00, too low for this profile — reset toward thesis. GG 24, All-MLB 2nd; underpriced = BUY." },
+  "joey ortiz":        { team:"Brewers", tier:"Glove SS", traj:"↓", posture:"VALUE", tilt:0.57, note:"[6/26 -> 0.57] STATS -0.11: soft contact (xwOBA .285, barrel 3%), OPS .528, cooling .594->.293. NEWS 0: lost everyday SS to Pratt -> utility (reinforces the cap). Cheap autos only." },
+  "garrett mitchell":  { team:"Brewers", tier:"Toolsy/Risk", traj:"?", posture:"FLIER", tilt:0.83, note:"[6/26 -> 0.83] STATS -0.01: strong underlying contact (barrel 13%, EV 92.3) but cooling .842->.482 last7. NEWS 0: streaky, recent HR, no injury. Elite tools, injury-capped — cheap upside only." },
+  "andrew vaughn":     { team:"Brewers", cardTeams:["White Sox"], tier:"Regular", traj:"→", posture:"VALUE", tilt:0.86, note:"[6/26 -> 0.86] STATS +0.05: xwOBA .368, warming (OPS 1.008->1.142). NEWS 0: hot but average-driven (only 2 HR, low barrel), time scaled back vs RHP — caps upside. Cards say White Sox; don t pay up." },
+  "sal frelick":       { team:"Brewers", tier:"Regular", traj:"→", posture:"VALUE", tilt:0.90, note:"[6/26 -> 0.90] STATS -0.03: soft season contact (xwOBA .280, barrel 2.4%). NEWS +0.01: warming (OPS .635->.765 last7), everyday RF, multi-RBI games. GG 24; low power caps ceiling — discount or skip." },
+  "jake bauers":       { team:"Brewers", tier:"Momentum", traj:"🔥", posture:"SELL", tilt:0.72, note:"[6/26 -> 0.72] STATS +0.06: elite contact (barrel 13.3%, EV 92.8, .885 OPS, 14 HR), career-high hit streak. NEWS 0 -> SELL-INTO-STRENGTH: this heat IS the exit window, not a buy. Age-30 breakout, regression base case; TRIM high-print non-autos." },
+  "luis rengifo":      { team:"Brewers", tier:"DFA — off roster", traj:"↓", posture:"AVOID", tilt:0.50, note:"[6/26 -> 0.50 floor] EVENT: DESIGNATED FOR ASSIGNMENT 6/16 to clear Pratt — off the 40-man. Forced-out trigger. Remove from active consideration; pass entirely." },
+  "gary sanchez":      { team:"Brewers", tier:"Backup C", traj:"→", posture:"FLIER", tilt:0.70, note:"[6/26 -> 0.70] STATS -0.05: cooling (OPS .643->.451 last7). NEWS 0. Veteran backup catcher; legacy-name liquidity only — cheap." },
   // ----- PROSPECTS -----
   "jesus made":        { team:"Brewers", tier:"Elite (top-5)", traj:"↑", posture:"HOLD∞", tilt:1.45, note:"Crown jewel; autos $290–1650, mostly above your cap — use sniper-search. /25 & rarer hold-forever." },
   "luis pena":         { team:"Brewers", tier:"Elite #2", traj:"⚕", posture:"CAUTION", tilt:0.95, note:"HEALTH FLAG: collapsed/hospitalized in April, saw a neurologist — don't accumulate hard until cleared." },
   "handelfry encarnacion": { team:"Brewers", tier:"Priority Flier ↑", traj:"↑", posture:"BUY", tilt:1.45, note:"BUY AGGRESSIVELY — Carolina League POW, 5 HR/mo, 105mph EV; target 1st Bowman autos tighter than /299." },
   "jett williams":     { team:"Brewers", cardTeams:["Mets"], tier:"Elite #3", traj:"↑", posture:"BUY", tilt:1.35, note:"Cards say Mets — repricing lag + rank jump; target 1st Bowman autos. Debut is the catalyst." },
-  "brandon sproat":    { team:"Brewers", cardTeams:["Mets"], tier:"High #5–6", traj:"↑", posture:"BUY", tilt:1.30, note:"Cards say Mets — lag opportunity; opening-day rotation, elite K-rate; keep print-run discipline." },
-  "cooper pratt":      { team:"Brewers", tier:"High #4 — DEBUT", traj:"🔥", posture:"BUY", tilt:1.38, note:"EVENT 6/16: MLB DEBUT today vs CLE, batting 8th, named everyday SS. Murphy: 'shortstop of the future.' 8yr/$50.75M extension. Catalyst is LIVE — buy 1st Bowman autos before repricing." },
+  "brandon sproat":    { team:"Brewers", cardTeams:["Mets"], tier:"High #5–6", traj:"→", posture:"BUY", tilt:1.27, note:"[6/26 -> 1.27] STATS -0.02: rough stretch (5.43 ERA, xwOBA-against .339). NEWS 0: verify rotation status next pass. Cards say Mets -> lag opportunity; keep print-run discipline." },
+  "cooper pratt":      { team:"Brewers", tier:"High #4 — DEBUT", traj:"🔥", posture:"BUY", tilt:1.44, note:"[6/26 -> 1.44] STATS -0.04: soft early contact (barrel 5%, breaking-ball whiffs) — expected for a 21yo glove-first SS. NEWS +0.03: 8yr/$50.75M ext + locked everyday SS-of-future (+0.02), 5-game hit streak post-debut (+0.01). Role > two weeks of contact — buy 1st Bowman autos before repricing." },
+  "david hamilton":    { team:"Brewers", tier:"Utility INF", traj:"↓", posture:"FLIER", tilt:0.89, note:"[6/26 -> 0.89 NEW] STATS -0.11: soft contact (xwOBA .264, barrel 4.3%), OPS .622, cooling .678->.467. NEWS 0: utility behind Pratt/Turang. Thin card market — cheap fliers only." },
   "andrew fischer":    { team:"Brewers", tier:"High #6", traj:"↑", posture:"BUY", tilt:1.20, note:"Ranked #1 3B prospect in baseball — but prior bust-risk flag; don't overpay the hype." },
   "logan henderson":   { team:"Brewers", tier:"Near-MLB arm", traj:"⚕", posture:"BUY", tilt:1.20, note:"On IL (back, ~July return); 2.23 ERA, elite K — debut is the catalyst — buy ahead at a discount." },
   "jeferson quero":    { team:"Brewers", tier:"C (declining)", traj:"↓", posture:"VALUE", tilt:0.85, note:"Labrum injury eroded his arm (the core skill) — thesis changed; buy cheap or pass." },
@@ -539,14 +643,13 @@ async function workerGet(path){
 // Interpret one player's bundle -> { delta, drivers[] }. drivers carry the shown evidence.
 function interpretPlayer(name, stats, statcast, newsItems){
   const drivers = [];
-  let statDelta = 0;   // the 70% bucket (stats + statcast + game logs)
-  let newsDelta = 0;   // the 30% bucket
+  let statDelta = 0;   // the ONLY automated bucket now (stats + statcast + game logs)
   // level label: "" for MLB, "AAA · " / "AA · " etc for minors (so a stat's level is always clear)
   const lvl = (stats && stats.level && stats.level !== "MLB") ? (stats.level + " · ") : "";
 
   // ---- STATCAST (underlying skill) — PITCHER-AWARE ----
-  // For batters, these numbers describe the contact they MAKE (high = good).
-  // For pitchers, the same columns describe the contact they ALLOW (high = bad) — flip the sign.
+  // For batters these numbers describe contact they MAKE (high = good). For pitchers the
+  // same columns describe contact they ALLOW (high = bad) — the interpretation flips.
   if (statcast){
     const isPitcher = statcast.__type === "pitcher";
     const xwoba = parseFloat(statcast.xwoba);
@@ -560,13 +663,13 @@ function interpretPlayer(name, stats, statcast, newsItems){
     if (!isNaN(hh)) bits.push(`HH${isPitcher?" against":""} ${hh}%`);
     if (!isNaN(barrel) && !isNaN(ev)){
       if (!isPitcher){
-        if (barrel >= 12 || ev >= 92){ statDelta += 0.04; drivers.push({k:"statcast", dir:"+", txt:`Strong contact (${bits.join(", ")})`}); }
-        else if (barrel <= 5 && ev <= 88){ statDelta -= 0.04; drivers.push({k:"statcast", dir:"-", txt:`Soft contact (${bits.join(", ")})`}); }
+        if (barrel >= 12 || ev >= 92){ statDelta += 0.04; drivers.push({k:"statcast", dir:"+", d:0.04, bucket:"stat", txt:`Strong contact (${bits.join(", ")})`}); }
+        else if (barrel <= 5 && ev <= 88){ statDelta -= 0.04; drivers.push({k:"statcast", dir:"-", d:-0.04, bucket:"stat", txt:`Soft contact (${bits.join(", ")})`}); }
         else drivers.push({k:"statcast", dir:"0", txt:`Statcast: ${bits.join(", ")}`});
       } else {
         // PITCHER: inducing weak contact is GOOD; getting barreled is BAD
-        if (barrel <= 6 && ev <= 88.5){ statDelta += 0.04; drivers.push({k:"statcast", dir:"+", txt:`Inducing weak contact (${bits.join(", ")})`}); }
-        else if (barrel >= 10 || ev >= 91.5){ statDelta -= 0.04; drivers.push({k:"statcast", dir:"-", txt:`Getting barreled (${bits.join(", ")})`}); }
+        if (barrel <= 6 && ev <= 88.5){ statDelta += 0.04; drivers.push({k:"statcast", dir:"+", d:0.04, bucket:"stat", txt:`Inducing weak contact (${bits.join(", ")})`}); }
+        else if (barrel >= 10 || ev >= 91.5){ statDelta -= 0.04; drivers.push({k:"statcast", dir:"-", d:-0.04, bucket:"stat", txt:`Getting barreled (${bits.join(", ")})`}); }
         else drivers.push({k:"statcast", dir:"0", txt:`Statcast: ${bits.join(", ")}`});
       }
     } else if (bits.length){
@@ -581,15 +684,22 @@ function interpretPlayer(name, stats, statcast, newsItems){
     const pitch = g.filter(x=>x.type==="pitching");
     const hit = g.filter(x=>x.type==="hitting");
     if (pitch.length){
-      // dominant outing: >=5 IP and 0 ER
+      // dominant outing: >=5 IP and 0 ER. Tier it — an elite, high-K start (a real "he's back"
+      // signal, e.g. a return-from-IL gem) earns more weight than a routine quality start.
       const gem = pitch.find(p => parseFloat(p.ip) >= 5 && (+p.er||0) === 0);
-      if (gem){ statDelta += 0.02; drivers.push({k:"game", dir:"+", txt:`${lvl}Recent: ${gem.ip} IP, ${gem.er} ER, ${gem.k} K (${gem.date}) — one strong start`}); }
+      if (gem){
+        const k = +gem.k||0, ipNum = parseFloat(gem.ip)||0;
+        const elite = (ipNum >= 6 && k >= 8);   // 6+ IP, 0 ER, 8+ K = dominant
+        const d = elite ? 0.05 : 0.02;
+        statDelta += d;
+        drivers.push({k:"game", dir:"+", d, bucket:"stat", txt:`${lvl}Recent: ${gem.ip} IP, ${gem.er} ER, ${gem.k} K (${gem.date}) — ${elite?"DOMINANT start":"one strong start"}`});
+      }
       const blow = pitch.find(p => (+p.er||0) >= 5);
-      if (blow){ statDelta -= 0.02; drivers.push({k:"game", dir:"-", txt:`${lvl}Recent: ${blow.er} ER in ${blow.ip} IP (${blow.date}) — rough outing`}); }
+      if (blow){ statDelta -= 0.02; drivers.push({k:"game", dir:"-", d:-0.02, bucket:"stat", txt:`${lvl}Recent: ${blow.er} ER in ${blow.ip} IP (${blow.date}) — rough outing`}); }
     }
     if (hit.length){
       const hr = hit.reduce((s,x)=>s+(+x.hr||0),0);
-      if (hr >= 2){ statDelta += 0.02; drivers.push({k:"game", dir:"+", txt:`${lvl}Recent: ${hr} HR across ${hit.length} game(s)`}); }
+      if (hr >= 2){ statDelta += 0.02; drivers.push({k:"game", dir:"+", d:0.02, bucket:"stat", txt:`${lvl}Recent: ${hr} HR across ${hit.length} game(s)`}); }
     }
   }
 
@@ -598,15 +708,15 @@ function interpretPlayer(name, stats, statcast, newsItems){
     if (stats.season.pitching && stats.season.pitching.era != null){
       const era = parseFloat(stats.season.pitching.era);
       if (!isNaN(era)){
-        if (era < 3.0){ statDelta += 0.02; drivers.push({k:"season", dir:"+", txt:`${lvl}Season ERA ${stats.season.pitching.era}, ${stats.season.pitching.k} K`}); }
-        else if (era > 5.0){ statDelta -= 0.02; drivers.push({k:"season", dir:"-", txt:`${lvl}Season ERA ${stats.season.pitching.era}`}); }
+        if (era < 3.0){ statDelta += 0.02; drivers.push({k:"season", dir:"+", d:0.02, bucket:"stat", txt:`${lvl}Season ERA ${stats.season.pitching.era}, ${stats.season.pitching.k} K`}); }
+        else if (era > 5.0){ statDelta -= 0.02; drivers.push({k:"season", dir:"-", d:-0.02, bucket:"stat", txt:`${lvl}Season ERA ${stats.season.pitching.era}`}); }
       }
     }
     if (stats.season.hitting && stats.season.hitting.ops != null){
       const ops = parseFloat(stats.season.hitting.ops);
       if (!isNaN(ops)){
-        if (ops >= .850){ statDelta += 0.02; drivers.push({k:"season", dir:"+", txt:`${lvl}Season OPS ${stats.season.hitting.ops}, ${stats.season.hitting.hr} HR`}); }
-        else if (ops <= .650){ statDelta -= 0.02; drivers.push({k:"season", dir:"-", txt:`${lvl}Season OPS ${stats.season.hitting.ops}`}); }
+        if (ops >= .850){ statDelta += 0.02; drivers.push({k:"season", dir:"+", d:0.02, bucket:"stat", txt:`${lvl}Season OPS ${stats.season.hitting.ops}, ${stats.season.hitting.hr} HR`}); }
+        else if (ops <= .650){ statDelta -= 0.02; drivers.push({k:"season", dir:"-", d:-0.02, bucket:"stat", txt:`${lvl}Season OPS ${stats.season.hitting.ops}`}); }
       }
     }
   }
@@ -617,129 +727,23 @@ function interpretPlayer(name, stats, statcast, newsItems){
     if (tr.kind === "hitting" && tr.last7 && tr.last30 && tr.last7.games >= 5){
       const d = tr.last7.ops - tr.last30.ops;      // positive = recent hotter than baseline
       const l7 = tr.last7.ops.toFixed(3), l15 = tr.last15 ? tr.last15.ops.toFixed(3) : "—", l30 = tr.last30.ops.toFixed(3);
-      if (d >= 0.150){ statDelta += 0.05; drivers.push({k:"trend", dir:"+", txt:`${lvl}HEATING UP: OPS last30 ${l30} → last15 ${l15} → last7 ${l7} (+${d.toFixed(3)})`}); }
-      else if (d >= 0.080){ statDelta += 0.03; drivers.push({k:"trend", dir:"+", txt:`${lvl}warming: OPS last30 ${l30} → last7 ${l7} (+${d.toFixed(3)})`}); }
-      else if (d <= -0.150){ statDelta -= 0.05; drivers.push({k:"trend", dir:"-", txt:`${lvl}COOLING OFF: OPS last30 ${l30} → last7 ${l7} (${d.toFixed(3)})`}); }
-      else if (d <= -0.080){ statDelta -= 0.03; drivers.push({k:"trend", dir:"-", txt:`${lvl}cooling: OPS last30 ${l30} → last7 ${l7} (${d.toFixed(3)})`}); }
+      if (d >= 0.150){ statDelta += 0.05; drivers.push({k:"trend", dir:"+", d:0.05, bucket:"stat", txt:`${lvl}HEATING UP: OPS last30 ${l30} → last15 ${l15} → last7 ${l7} (+${d.toFixed(3)})`}); }
+      else if (d >= 0.080){ statDelta += 0.03; drivers.push({k:"trend", dir:"+", d:0.03, bucket:"stat", txt:`${lvl}warming: OPS last30 ${l30} → last7 ${l7} (+${d.toFixed(3)})`}); }
+      else if (d <= -0.150){ statDelta -= 0.05; drivers.push({k:"trend", dir:"-", d:-0.05, bucket:"stat", txt:`${lvl}COOLING OFF: OPS last30 ${l30} → last7 ${l7} (${d.toFixed(3)})`}); }
+      else if (d <= -0.080){ statDelta -= 0.03; drivers.push({k:"trend", dir:"-", d:-0.03, bucket:"stat", txt:`${lvl}cooling: OPS last30 ${l30} → last7 ${l7} (${d.toFixed(3)})`}); }
     } else if (tr.kind === "pitching" && tr.last7 && tr.last30 && tr.last7.games >= 3){
       // for pitchers, LOWER recent ERA = heating up (pitching better)
       const d = tr.last30.era - tr.last7.era;       // positive = recent ERA lower than baseline = better
       const l7 = tr.last7.era.toFixed(2), l30 = tr.last30.era.toFixed(2);
-      if (d >= 1.50){ statDelta += 0.05; drivers.push({k:"trend", dir:"+", txt:`${lvl}DEALING: ERA last30 ${l30} → last7 ${l7} (improving)`}); }
-      else if (d >= 0.75){ statDelta += 0.03; drivers.push({k:"trend", dir:"+", txt:`${lvl}trending up: ERA last30 ${l30} → last7 ${l7}`}); }
-      else if (d <= -1.50){ statDelta -= 0.05; drivers.push({k:"trend", dir:"-", txt:`${lvl}STRUGGLING: ERA last30 ${l30} → last7 ${l7} (worsening)`}); }
-      else if (d <= -0.75){ statDelta -= 0.03; drivers.push({k:"trend", dir:"-", txt:`${lvl}slipping: ERA last30 ${l30} → last7 ${l7}`}); }
+      if (d >= 1.50){ statDelta += 0.05; drivers.push({k:"trend", dir:"+", d:0.05, bucket:"stat", txt:`${lvl}DEALING: ERA last30 ${l30} → last7 ${l7} (improving)`}); }
+      else if (d >= 0.75){ statDelta += 0.03; drivers.push({k:"trend", dir:"+", d:0.03, bucket:"stat", txt:`${lvl}trending up: ERA last30 ${l30} → last7 ${l7}`}); }
+      else if (d <= -1.50){ statDelta -= 0.05; drivers.push({k:"trend", dir:"-", d:-0.05, bucket:"stat", txt:`${lvl}STRUGGLING: ERA last30 ${l30} → last7 ${l7} (worsening)`}); }
+      else if (d <= -0.75){ statDelta -= 0.03; drivers.push({k:"trend", dir:"-", d:-0.03, bucket:"stat", txt:`${lvl}slipping: ERA last30 ${l30} → last7 ${l7}`}); }
     }
   }
 
-  // ---- NEWS (30% bucket) keyword -> nudge map ----
-  // hard = discrete facts (debut/injury/demotion) -> bigger, undampened weight.
-  // soft = sentiment/role chatter -> small, goes in the 30% bucket.
-  const NEWS_RULES = [
-    { re:/(call(ed)?\s*up|promoted|mlb debut|making his debut|recalled)/i, d:+0.08, label:"call-up / debut", hard:true },
-    { re:/(injury|injured|\bil\b|strained?|surgery|setback|shut down|shutdown|fractur|sprain|tear|torn)/i, d:-0.12, label:"injury / IL", hard:true },
-    { re:/(demot|optioned|sent down|designated?\b|for assignment|\bdfa\b|waiver|released)/i, d:-0.10, label:"demotion / DFA", hard:true },
-    { re:/(player of the (week|month)|all.?star|cy young|gold glove|mvp|rookie of)/i, d:+0.05, label:"award / honor", hard:false },
-    { re:/(extension|signs?|signed|new deal|contract)/i, d:+0.04, label:"contract / extension", hard:false },
-    { re:/(everyday|regular role|taking over|starting (job|role)|named the)/i, d:+0.03, label:"role increase", hard:false },
-    { re:/(delay(ing)?|extra rest|skipped|pushed back)/i, d:-0.02, label:"rest / delay", hard:false },
-    { re:/(slump|struggl|cold streak|benched)/i, d:-0.03, label:"slump / benched", hard:false },
-    // performance events mentioned in prose (small, soft — sentence-attributed)
-    { re:/(home ?run|homer(ed|s)?|went deep|long ball|grand slam|multi-?homer)/i, d:+0.03, label:"power (HR)", hard:false },
-    { re:/(walk-?off|game-?winning|clutch)/i, d:+0.03, label:"clutch hit", hard:false },
-    { re:/(complete game|shutout|gem|dominant start|struck out \d{2})/i, d:+0.03, label:"strong start", hard:false },
-  ];
-  // Name match: last name is enough for UNIQUE last names (beat writers drop the first
-  // name after first reference). But if the last name is shared by multiple watchlist
-  // players (e.g. Devin & Jett Williams, the Gassers), require the FULL name to avoid
-  // crediting the wrong guy off one ambiguous headline.
-  const nameParts = name.toLowerCase().split(/\s+/).filter(Boolean);
-  const first = nameParts[0] || "";
-  const last = nameParts[nameParts.length - 1] || "";
-  const ambiguous = (typeof AMBIGUOUS_LASTNAMES !== "undefined") && AMBIGUOUS_LASTNAMES.has(last);
-  // is THIS player explicitly named in a given (lowercased) sentence?
-  function namedHere(s){
-    if (!s.includes(last)) return false;
-    if (ambiguous && nameParts.length >= 2) return s.includes(first);
-    return true;
-  }
-  // does the sentence name some OTHER tracked player (so the subject switches away)?
-  function namesAnotherPlayer(s){
-    if (typeof ALL_WATCH_NAMES === "undefined") return false;
-    for (const other of ALL_WATCH_NAMES){
-      if (other === name.toLowerCase()) continue;
-      const op = other.split(/\s+/).filter(Boolean);
-      const ol = op[op.length-1]; if (!ol) continue;
-      if (s.includes(ol)) {
-        // respect ambiguity: shared last name needs the other's first name too
-        if ((typeof AMBIGUOUS_LASTNAMES !== "undefined") && AMBIGUOUS_LASTNAMES.has(ol) && op.length>=2){
-          if (s.includes(op[0])) return true;
-        } else return true;
-      }
-    }
-    return false;
-  }
-  let hardDelta = 0;
-  const REHAB_RE = /(rehab|return(ing)?\s+from|injur(y|ed)\s+return|comeback|minor league)/i;
-  const REHAB_POS = /(strong|dominant|domination|scoreless|shutout|hitless|five[\- ]plus|6 (scoreless|shutout)|on track|nearing|close to return|ready|impress|sharp|cruised?|no runs|0 (er|runs))/i;
-  const REHAB_NEG = /(setback|shelled|rocked|roughed|struggl|crushed|blow(n|up)|gave up \d|allowed \d|hammered|shut down|shutdown|another delay|delayed|placed back|return to il)/i;
-  const PRONOUN_RE = /^\s*(he|his|him)\b/i;
-
-  for (const it of (newsItems||[])){
-    const fullText = (it.title||"") + ". " + (it.body||it.summary||"");
-    // split into sentences; track the current subject via naming + pronoun carryover
-    const sentences = fullText.replace(/\n+/g," ").split(/(?<=[.!?])\s+/).filter(x=>x.trim().length);
-    let subjectIsThisPlayer = false;
-    let subjectKnown = false; // is the current subject any tracked player?
-    for (const rawSent of sentences){
-      const s = rawSent.toLowerCase();
-      if (namedHere(s)){ subjectIsThisPlayer = true; subjectKnown = true; }
-      else if (namesAnotherPlayer(s)){ subjectIsThisPlayer = false; subjectKnown = true; }
-      else if (PRONOUN_RE.test(rawSent) && subjectKnown){ /* carry subject over */ }
-      else { subjectIsThisPlayer = false; subjectKnown = false; } // unknown subject -> ignore
-      if (!subjectIsThisPlayer) continue;
-
-      // MULTI-PLAYER SENTENCE GUARD: roundup sentences ("Milwaukee's IL includes X, Y, Z...")
-      // name several tracked players at once — scoring them misattributes credit/blame to
-      // everyone listed. If 2+ tracked players appear in this sentence, don't score it.
-      let namedCount = 0;
-      if (typeof ALL_WATCH_NAMES !== "undefined"){
-        for (const wn of ALL_WATCH_NAMES){
-          const wp = wn.split(/\s+/).filter(Boolean);
-          const wl = wp[wp.length-1];
-          if (wl && s.includes(wl)) namedCount++;
-          if (namedCount >= 2) break;
-        }
-      }
-      if (namedCount >= 2){
-        drivers.push({k:"news", dir:"0", txt:`multi-player mention (not scored — review): "${rawSent.trim().slice(0,90)}" (${it.source||"news"})`});
-        continue;
-      }
-
-      const snip = rawSent.trim().slice(0,90);
-      // rehab handling within this sentence
-      if (REHAB_RE.test(s)){
-        if (REHAB_POS.test(s) && !REHAB_NEG.test(s)){
-          hardDelta += 0.06; drivers.push({k:"news", dir:"+", txt:`rehab going well: "${snip}" (${it.source||"news"})`});
-        } else if (REHAB_NEG.test(s)){
-          hardDelta -= 0.08; drivers.push({k:"news", dir:"-", txt:`rehab setback: "${snip}" (${it.source||"news"})`});
-        } else {
-          drivers.push({k:"news", dir:"0", txt:`rehab news (outcome unclear — review): "${snip}" (${it.source||"news"})`});
-        }
-        continue; // sentence handled
-      }
-      for (const rule of NEWS_RULES){
-        if (rule.re.test(s)){
-          if (rule.hard) hardDelta += rule.d; else newsDelta += rule.d;
-          drivers.push({k:"news", dir: rule.d>0?"+":"-", txt:`${rule.label}: "${snip}" (${it.source||"news"})`});
-          break; // one rule per sentence
-        }
-      }
-    }
-  }
-
-  // ---- combine: stats 70% + soft-news 30%, then add hard events at full weight ----
-  let delta = 0.70*statDelta + 0.30*newsDelta + hardDelta;
+  // ---- combine: STATS drive the full delta. News is handled in chat (manual pass), not here. ----
+  let delta = statDelta;
   delta = Math.max(-0.20, Math.min(0.20, delta));   // a single refresh can't swing more than ±0.20
   delta = Math.round(delta*100)/100;
   return { delta, drivers };
@@ -756,17 +760,16 @@ async function refreshIntel(){
   if (btn) btn.disabled = true;
   try {
     const since = lastIntelPull ? intelDateStr(lastIntelPull) : intelDateStr(Date.now() - 7*86400000);
-    statusEl.textContent = `Pulling stats, Statcast & news since ${since}…`;
+    const todayStr2 = intelDateStr(Date.now());
+    statusEl.textContent = `Pulling stats & Statcast as of ${todayStr2} (game logs since ${since})…`;
 
     // players to evaluate = current watchlist
     const names = watchlist.map(w => w.player);
     const namesParam = encodeURIComponent(names.join("|"));
 
-    // 1) news (one call, covers everyone)
-    let news = { items: [] };
-    try { news = await workerGet(`/news`); } catch(e){ /* news optional */ }
+    // (news is no longer auto-pulled — it's done as a manual chat pass and baked into the brain)
 
-    // 2) stats with game logs since last pull
+    // stats with game logs since last pull
     let statsResp = { players: [] };
     try { statsResp = await workerGet(`/stats?players=${namesParam}&since=${since}`); } catch(e){}
 
@@ -785,7 +788,7 @@ async function refreshIntel(){
     }
     for (const p of (scPit.players||[])){
       const nm = (p["last_name, first_name"]||"").toLowerCase();
-      scByName[nm] = { ...p, __type: "pitcher" };   // pitcher row wins if a name is in both
+      scByName[nm] = { ...p, __type: "pitcher" };   // pitcher row wins if a name appears in both
     }
     function matchStatcast(name){
       const parts = name.toLowerCase().split(/\s+/);
@@ -807,7 +810,7 @@ async function refreshIntel(){
       const nm = w.player;
       const stats = statsByName[nm.toLowerCase()] || null;
       const statcast = matchStatcast(nm);
-      const { delta, drivers } = interpretPlayer(nm, stats, statcast, news.items);
+      const { delta, drivers } = interpretPlayer(nm, stats, statcast, []);
       const hadData = !!(stats || statcast);
       if (!drivers.length){
         intelReviewed[hadData ? "noChange" : "noData"].push(nm);
@@ -861,7 +864,7 @@ function renderIntelPanel(){
   const el = document.getElementById("intelPanel");
   if (!el) return;
   if (!intelSuggestions.length){
-    el.innerHTML = `<p class="small">No suggestions yet. Click “Refresh Intel” to pull the latest stats, Statcast & news and see proposed tilt changes.</p>`;
+    el.innerHTML = `<p class="small">No suggestions yet. Click “Refresh Intel” to pull the latest stats & Statcast and see proposed tilt changes.</p>`;
     return;
   }
   el.innerHTML = intelSuggestions.map((s,i)=>{
@@ -878,6 +881,7 @@ function renderIntelPanel(){
         <span class="small ${moveCls}">${sign}${move.toFixed(2)}</span>
       </div>
       <div class="intel-drivers">${s.drivers.map(driverChip).join("")}</div>
+      ${deltaBreakdown(s)}
       <div class="intel-actions">
         <button onclick="acceptIntel(${i})">✓ Accept ${s.suggested.toFixed(2)}x</button>
         <span class="override">or set:
@@ -888,6 +892,30 @@ function renderIntelPanel(){
       </div>
     </div>`;
   }).join("") + reviewedSummary();
+}
+
+// Show how the suggested delta is actually built: stats 70% + soft-news 30% + hard events full.
+// Reconstructs the same formula interpretPlayer uses so the user sees the components add up.
+function deltaBreakdown(s){
+  const ds = s.drivers || [];
+  const sum = (b)=> ds.filter(d=>d.bucket===b && typeof d.d==="number").reduce((a,d)=>a+d.d,0);
+  const statRaw = sum("stat"), newsRaw = sum("news"), hardRaw = sum("hard");
+  // if nothing carried a numeric driver (e.g. drift re-anchor suggestion), skip the equation
+  if (!ds.some(d=>typeof d.d==="number")) return "";
+  const f = (x)=> (x>=0?"+":"−") + Math.abs(x).toFixed(3).replace(/0+$/,"").replace(/\.$/,"");
+  const parts = [];
+  if (statRaw!==0) parts.push(`<span title="stats / Statcast / rolling trend — full weight">${f(statRaw)} stats</span>`);
+  if (hardRaw!==0) parts.push(`<span title="hard events (injury/DFA/call-up/rehab) at full weight">${f(hardRaw)} hard events</span>`);
+  if (!parts.length) return "";
+  const combined = statRaw + hardRaw;
+  const clamped = Math.max(-0.20, Math.min(0.20, combined));
+  const wasClamped = Math.abs(combined - clamped) > 0.001;
+  const rounded = Math.round(clamped*100)/100;
+  return `<div class="intel-math">`+
+    parts.join(' <span class="op">+</span> ')+
+    ` <span class="op">=</span> <b>${f(combined)}</b>`+
+    (wasClamped ? ` <span class="clamp">(capped at ${f(clamped)} — max ±0.20/refresh)</span>` : ``)+
+    ` <span class="op">→</span> rounded to <b>${rounded>=0?"+":"−"}${Math.abs(rounded).toFixed(2)}</b></div>`;
 }
 
 function reviewedSummary(){
@@ -935,6 +963,16 @@ function rejectIntel(i){
   if (card) card.innerHTML = `<div class="small">✕ Rejected — ${esc(s.player)} tilt unchanged at ${s.cur.toFixed(2)}x.</div>`;
 }
 
+// MARKET-EFFICIENCY constants (declared early: renderBrainPanel runs on load and uses them) ----
+const MARKET_PRICED = { star: 0.75, mid: 0.60, deep: 0.45 };   // % of our view already in the price (tunable)
+const MKT_TIER = {   // anyone not listed defaults to "star" (efficient/followed)
+  "jesus made":"mid","luis pena":"mid","jett williams":"mid","brandon sproat":"mid","cooper pratt":"mid",
+  "andrew fischer":"mid","logan henderson":"mid","jeferson quero":"mid",
+  "handelfry encarnacion":"deep","bishop letson":"deep","marco dinges":"deep","luis lara":"deep",
+  "luke adams":"deep","josh adamczewski":"deep","braylon payne":"deep","brady ebel":"deep","jd thompson":"deep",
+  "tyson hardin":"deep","brock wilken":"deep","blake burke":"deep","diego frontado":"deep","shane drohan":"deep",
+  "coleman crow":"deep","craig yoho":"deep","josh knoth":"deep","eric bitonti":"deep","frank cairone":"deep"
+};
 function renderBrainPanel(){
   const el = document.getElementById("brainPanel");
   if (!el) return;
@@ -942,16 +980,20 @@ function renderBrainPanel(){
     const b = brainFor(w.player); if (!b) return "";
     const pm = POSTURE_META[b.posture] || { label:b.posture, cls:"p-value" };
     const alert = b.cardTeams ? ` <span class="alert">card: ${b.cardTeams.join("/")}</span>` : "";
+    const t = tiltFor(w.player), et = effectiveTilt(w.player), mt = marketTier(w.player);
+    const tcls = t>1.05?"disc-good":(t<0.95?"disc-bad":"");
     return `<tr>
       <td><b>${esc(w.player)}</b></td>
       <td><span class="team">${b.team}</span>${alert}</td>
       <td>${esc(b.tier)} ${b.traj||""}</td>
       <td><span class="posture ${pm.cls}">${pm.label}</span></td>
+      <td style="text-align:center"><b class="${tcls}">${t.toFixed(2)}×</b></td>
+      <td style="text-align:center" title="edge-dampened tilt used for deal-today math (${mt})">${et.toFixed(2)}×<div class="small">${mt}</div></td>
       <td class="note">${esc(b.note)}</td>
     </tr>`;
   }).join("");
-  el.innerHTML = `<table class="brain-table">
-    <tr><th>Player</th><th>Current Team</th><th>Tier</th><th>Posture</th><th>Note</th></tr>${rows}</table>`;
+  el.innerHTML = `<p class="small" style="margin:0 0 6px">Read-only — no data pull. <b>Tilt</b> = full conviction (drives 12-mo forward value). <b>Deal-tilt</b> = tilt dampened by the edge the market hasn't priced yet (drives the tilt-adjusted discount).</p><table class="brain-table">
+    <tr><th>Player</th><th>Current Team</th><th>Tier</th><th>Posture</th><th>Tilt</th><th>Deal-tilt</th><th>Note</th></tr>${rows}</table>`;
 }
 
 /* ============ CONFIG ============ */
@@ -1031,18 +1073,31 @@ const PARALLELS = [
   "yellow","orange","red","blue","green","purple","aqua","teal","gold","black","pink","white"
 ];
 const PRODUCTS = [
-  "bowman chrome sapphire","bowman sterling","bowman chrome","bowman draft","bowman's best",
-  "bowmans best","topps chrome update","topps chrome black","topps chrome","topps finest",
-  "finest","topps sterling","topps tribute","tribute","topps inception","inception",
+  // Bowman family (most-specific first; bare "bowman" is handled in the parse fallback for paper)
+  "bowman chrome sapphire","bowman sterling","bowman platinum","bowman chrome","bowman draft chrome","bowman draft",
+  "bowman's best","bowmans best",
+  // Topps chrome lines (sapphire BEFORE plain chrome so it wins)
+  "topps chrome platinum anniversary","topps chrome platinum","topps chrome sapphire","topps chrome update",
+  "topps chrome black","topps chrome","topps finest","finest","topps sterling",
+  // Topps premium numbered/auto sets (must precede generic "topps" so they silo on their own)
+  "topps museum collection","museum collection","topps dynasty","dynasty","topps definitive","definitive",
+  "topps triple threads","triple threads","topps diamond icons","diamond icons",
+  "topps tribute","tribute","topps inception","inception","topps five star","five star",
+  "topps luminaries","luminaries","topps gold label","gold label","topps pristine","pristine",
+  "allen & ginter","allen ginter","gypsy queen",
+  // Topps mid/flagship
   "topps update","topps heritage","heritage","stadium club chrome","stadium club",
-  "topps gold label","gold label","topps pristine","pristine","topps five star","five star",
-  "topps luminaries","luminaries","topps archives","archives","topps series","topps"
+  "topps archives","archives","topps series","topps"
 ];
 
 function parseTitle(rawTitle){
-  const t = " " + rawTitle.toLowerCase().replace(/[\u2013\u2014]/g,"-") + " ";
-  const out = { raw: rawTitle, auto: false, printRun: null, serial: null,
-                parallel: null, product: null, graded: null, chrome: false, lot: false, digital: false };
+  const t = " " + rawTitle.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[\u2013\u2014]/g,"-") + " ";
+  const out = { raw: rawTitle, auto: false, printRun: null, serial: null, year: null,
+                parallel: null, product: null, graded: null, chrome: false, lot: false, digital: false, ip: false, oddSize: false };
+
+  // year (4-digit 19xx/20xx). Take the first plausible card year.
+  const ym = t.match(/\b(19[5-9]\d|20[0-4]\d)\b/);
+  if (ym) out.year = +ym[1];
 
   // graded?
   const g = t.match(/\b(psa|bgs|sgc|cgc)\s*(10|9\.5|9|8\.5|8|7)\b/);
@@ -1054,8 +1109,26 @@ function parseTitle(rawTitle){
   // digital (Topps Bunt app / digital-only cards) — not physical, exclude
   if (/\bdigital\b|\bbunt\b|topps bunt/.test(t)) out.digital = true;
 
-  // auto?
-  if (/\bauto\b|\bautograph\b|\bsigned\b|\bau\b/.test(t)) out.auto = true;
+  // ODD SIZE: mini, 5x7, oversized, box-topper etc. — not standard-size cards; exclude.
+  if (/\bmini\b|\bt205\b|\bt206\b|\b5\s*x\s*7\b|\b5x7\b|\boversize[d]?\b|\bbox\s*topper\b|\bjumbo\b|\bblaster\b/.test(t)) out.oddSize = true;
+
+  // in-person / IP / fan-obtained signature — NOT a licensed certified auto. Exclude.
+  // Tells: "in person", "IP auto", "signed IP", JSA/Beckett-witnessed, "COA" (cert autos
+  // authenticate on-card and never advertise COA).
+  let ipFlag = /\bin[\s-]?person\b|\bip\s*auto\b|\bauto\s*ip\b|\bsigned\s*ip\b|\bip\b(?=.*\b(auto|signed)\b)|\bjsa\b|\bbeckett\s*witness|\bcoa\b|certificate\s+of\s+authenticit/.test(t);
+  // A standalone "signed" is ALSO a strong IP tell — manufacturers label cert autos "Auto/Autograph",
+  // never "Signed". But spare a card that clearly signals a real cert auto (numbered + "certified",
+  // or "on-card autograph"), to avoid nuking the occasional legit auto a seller called "signed".
+  if (!ipFlag && /\bsigned\b/.test(t)){
+    const looksCertified = /certified\s+auto|on-?card\s+auto(graph)?|\bauto(graph)?\b.*\/\s*\d/.test(t);
+    if (!looksCertified) ipFlag = true;
+  }
+  if (ipFlag) out.ip = true;
+
+  // auto? (certified). Watch for explicit negation: "non auto", "no auto", "not signed".
+  const isNonAuto = /\bnon[\s-]?auto\b|\bno\s+auto\b|\bunsigned\b|\bnot\s+signed\b/.test(t);
+  if (!isNonAuto && /\bauto\b|\bautograph(s|ed)?\b|\bau\b/.test(t)) out.auto = true;
+  if (out.ip) out.auto = false;
 
   // serial / print run: "12/99", "#/99", "/99", "1 of 25", "23 of 75"
   let m = t.match(/\b(\d{1,3})\s*\/\s*(\d{1,4})\b/);   // 12/99
@@ -1071,6 +1144,29 @@ function parseTitle(rawTitle){
 
   // product (longest match first — list is ordered)
   for (const p of PRODUCTS) { if (t.includes(" "+p+" ") || t.includes(" "+p)) { out.product = p; break; } }
+  // FALLBACK: sellers split the product name across the title, e.g.
+  // "2025 Bowman - <player> #11 Chrome Burgundy Mojo Refractor /275" — "bowman" and "chrome"
+  // aren't adjacent, so the contiguous match above misses it and the card gets dropped from
+  // Card Check AND the arb silos. Recover it by whole-family token presence (draft/sapphire win).
+  if (!out.product){
+    if (t.includes(" bowman ")){                       // bowman family (chrome/draft/sterling split, or paper)
+      out.product = (t.includes("chrome") && t.includes("sapphire")) ? "bowman chrome sapphire"
+                  : (t.includes(" draft") && t.includes("chrome")) ? "bowman draft chrome"
+                  : t.includes(" draft")    ? "bowman draft"
+                  : t.includes("sterling")  ? "bowman sterling"
+                  : t.includes("chrome")    ? "bowman chrome"
+                  : "bowman";                          // PAPER Bowman (BPA prospect autos, base) — distinct silo from chrome
+    } else if (t.includes(" topps ") && t.includes("chrome")){
+      out.product = t.includes("platinum") ? "topps chrome platinum" : "topps chrome";
+    }
+  }
+  // Bowman Draft paper vs chrome are different products at very different values (paper Gold /50
+  // ~$30 vs chrome Gold /50 ~$200). If we tagged paper "bowman draft" but the title says chrome,
+  // upgrade so they silo separately and don't pollute each other's ladder median.
+  if (out.product==="bowman draft" && (t.includes("chrome") || t.includes("refractor") || /\bbdc-/.test(t))) out.product="bowman draft chrome";
+  // normalize Platinum variants ("platinum anniversary" / "platinum") to ONE product so the
+  // parallels don't split into separate silos
+  if (out.product === "topps chrome platinum anniversary") out.product = "topps chrome platinum";
   out.chrome = /chrome|finest|sterling|sapphire|refractor|pristine/.test(t);
 
   // parallel (longest/most specific first — list is ordered)
@@ -1096,41 +1192,28 @@ function cardKey(player, parsed){
 /* ============ SCANNING ============ */
 function setStatus(s){ document.getElementById("status").textContent = s; }
 
-async function fetchListings(query, offset = 0, sort = "price"){
+async function fetchListings(query, biasAuto=false){
   const base = localStorage.getItem("cs_worker");
   if (!base) { setStatus("⚠️ Set your Worker URL in Setup first."); throw new Error("no worker"); }
+  // Bias toward autos on bulk scans so a flood of $0.99 base commons doesn't eat the 200-listing
+  // budget before real cards appear. Only when caller asks AND the query isn't already auto-specific.
+  let q = query;
+  if (biasAuto && document.getElementById("fAutosOk").checked && !/\bauto/i.test(query)) {
+    q = query + " auto";
+  }
   const params = new URLSearchParams({
-    q: query,
+    q,
     limit: "200",
-    offset: String(offset),
-    sort: sort,
     buyingOptions: document.getElementById("fBuying").value,
   });
   const maxPrice = document.getElementById("fMaxPrice").value;
   if (maxPrice) params.set("maxPrice", maxPrice);
-  const minPriceEl = document.getElementById("fMinPrice");
-  const minPrice = minPriceEl ? minPriceEl.value : "";
-  if (minPrice && +minPrice > 0) params.set("minPrice", minPrice);
+  const minPrice = document.getElementById("fMinPrice").value;
+  if (minPrice && parseFloat(minPrice) > 0) params.set("minPrice", minPrice);
   const resp = await fetch(`${base}/search?${params}`);
   const data = await resp.json();
   if (data.error) throw new Error(JSON.stringify(data.error));
   return data.items || [];
-}
-
-// TWO-DIRECTION SCAN: one pass sweeps bottom-up from the min price (catches cheap
-// deals), one pass sweeps TOP-DOWN from the max price (catches the numbered cards
-// and autos that price-ascending can never reach on high-volume star players).
-// Results are merged and de-duplicated by listing id.
-async function fetchListingsDeep(query){
-  const asc = await fetchListings(query, 0, "price");
-  let desc = [];
-  if (asc.length >= 200) {                       // full cheap page -> there's more above it
-    await new Promise(r => setTimeout(r, 200));
-    try { desc = await fetchListings(query, 0, "-price"); } catch(e){ /* keep asc */ }
-  }
-  if (!desc.length) return asc;
-  const seen = new Set(asc.map(i => i.id));
-  return [...asc, ...desc.filter(i => !seen.has(i.id))];
 }
 
 async function scanAll(){
@@ -1143,15 +1226,34 @@ async function scanAll(){
     for (let i = 0; i < targets.length; i++) {
       const w = targets[i];
       setStatus(`Scanning ${i+1}/${targets.length}: ${w.player}…`);
-      const q = [w.player, w.keywords].filter(Boolean).join(" ");   // player (+ optional keywords); no OR-expansion (it lets eBay match non-player cards)
+      const baseQ = [w.player, w.keywords].filter(Boolean).join(" ");   // player (+ optional keywords)
       try {
-        const items = await fetchListingsDeep(q);
+        // Two passes so a flood of $0.99 base commons can't eat the 200-listing budget:
+        // pass 1 = autos, pass 2 = numbered parallels (refractor/numbered). Merge & de-dupe.
+        const autosOk = document.getElementById("fAutosOk").checked;
+        const numberedOnly = document.getElementById("fNumbered").checked;
+        const queries = [];
+        if (autosOk) queries.push(baseQ + " auto");
+        if (numberedOnly){
+          // numbered parallels are NOT always called "refractor" — many are "Vibrations",
+          // "Mini-Diamond", "Wave", "Toile", "Mojo", colored borders (Series 1), etc. A single
+          // "refractor" query misses all of those. Cast a wider net to actually surface the ladder.
+          queries.push(baseQ + " refractor");
+          queries.push(baseQ + " numbered");      // catches "numbered to" listings
+          queries.push(baseQ);                     // broad pass; parser + lastname filter cut the junk
+        }
+        if (!queries.length) queries.push(baseQ);               // fallback: literal
+        const seen = new Set();
+        let items = [];
+        for (const qq of queries){
+          const part = await fetchListings(qq);
+          for (const it of part){ if (!seen.has(it.id)){ seen.add(it.id); items.push(it); } }
+          await new Promise(r=>setTimeout(r,150));
+        }
         for (const it of items) {
           // require the player's last name in the title to cut noise
-          // (normalized: accents stripped, periods stripped — "Peña"≈"Pena", "J.D."≈"JD")
-          const normTxt = s => String(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\./g,"");
-          const lastName = normTxt(w.player).trim().split(/\s+/).slice(-1)[0];
-          if (!normTxt(it.title).includes(lastName)) continue;
+          const lastName = w.player.trim().split(/\s+/).slice(-1)[0].toLowerCase();
+          if (!it.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").includes(lastName.normalize("NFD").replace(/[\u0300-\u036f]/g,""))) continue;
           lastItems.push({ ...it, player: w.player, parsed: parseTitle(it.title) });
         }
       } catch(e) { console.warn("scan error", w.player, e); }
@@ -1162,6 +1264,361 @@ async function scanAll(){
     processResults(true);
     setStatus(`Done — ${lastItems.length} listings pulled across ${targets.length} players.`);
   } finally { btn.disabled = false; }
+}
+
+// ============ CARD CHECK — paste a title, get verdict + ladder + tilt ============
+// Extract the player name from a freeform card title by stripping known card-vocab tokens.
+function extractPlayerFromTitle(title){
+  const lowTitle = title.toLowerCase();
+  // ROBUST FIRST PASS: if a known watchlist player's full name appears in the title, use it.
+  // Far more reliable than token-stripping, which can grab set names ("Silver Pack", "Super Futures").
+  try {
+    if (typeof watchlist !== "undefined" && watchlist.length){
+      // longest names first so "Luis Pena" wins over a stray "Luis"
+      const names = watchlist.map(w=>w.player).filter(Boolean).sort((a,b)=>b.length-a.length);
+      for (const nm of names){
+        if (lowTitle.includes(nm.toLowerCase())) return nm;
+      }
+    }
+  } catch(e){}
+  // FALLBACK: token-strip card vocab to guess the name.
+  let t = " " + title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[\u2013\u2014]/g,"-") + " ";
+  // remove years, print runs, card numbers, set/parallel/grade vocab, team words
+  t = t.replace(/\b(19|20)\d{2}\b/g," ");                 // years
+  t = t.replace(/#?\s*\/\s*\d{1,4}\b/g," ");             // /25, #/25
+  t = t.replace(/\b\d{1,3}\s*\/\s*\d{1,4}\b/g," ");     // 12/99
+  t = t.replace(/#\s*[a-z0-9-]+/g," ");                    // #33, #BDC-90, #CPA-BS
+  t = t.replace(/\b\d+\b/g," ");                          // stray numbers
+  const STOP = new Set(["topps","bowman","bowmans","chrome","paper","draft","sterling","finest","sapphire","pristine",
+    "refractor","mojo","wave","prizm","auto","autograph","signed","rc","rookie","prospect","prospects","1st",
+    "first","edition","base","insert","parallel","variation","sp","ssp","mets","brewers","yankees","dodgers",
+    "red","sox","cubs","cardinals","pirates","reds","guardians","tigers","royals","twins","astros","angels",
+    "athletics","mariners","rangers","orioles","rays","blue","jays","braves","marlins","nationals","phillies",
+    "new","york","milwaukee","boston","chicago","detroit","kansas","city","minnesota","los","angeles","san",
+    "francisco","diego","tampa","bay","st","louis","mlb","baseball","card","update","series","one","two",
+    "orange","green","gold","purple","aqua","yellow","pink","white","black","teal","magenta","fuchsia",
+    "reptilian","lava","speckle","shimmer","raywave","ray","lazer","logofractor","superfractor","x-fractor",
+    "xfractor","mini","diamond","mega","box","stars","star","of","the","super","futures","future",
+    "best","inception","sapphire","heritage","stadium","club","allen","ginter","gypsy","queen",
+    "select","mosaic","optic","contenders","pristine","tribute","museum","tier","immaculate",
+    "flawless","national","treasures","spectra","obsidian","encased","cosmic","big","time","players",
+    "youthquake","showpieces","scouts","top","100","sterling","raywave","pick","choose","your","you",
+    "silver","pack","gold","retro","throwback","anniversary","commemorative","logo","patch","relic",
+    "1990","1991","1989","1987","1986","1988","decade","flashback","retro","mojo","shimmer","speckle"]);
+  const words = t.split(/\s+/).filter(w=>w && !STOP.has(w) && w.length>1 && /^[a-z.'-]+$/.test(w));
+  // player name is usually the first 2 surviving tokens
+  return words.slice(0,2).join(" ").replace(/\b\w/g,c=>c.toUpperCase());
+}
+
+// find this player's tilt from the brain (or 1.0 if not tracked)
+function tiltForName(name){
+  if (typeof tiltFor === "function"){
+    try { return tiltFor(name); } catch(e){}
+  }
+  return 1.0;
+}
+
+async function cardCheck(){
+  const title = document.getElementById("cardCheckInput").value.trim();
+  if (!title){ return; }
+  const askPrice = parseFloat(document.getElementById("cardCheckPrice").value) || null;
+  const out = document.getElementById("cardCheckResult");
+  out.innerHTML = '<p class="small">Checking…</p>';
+
+  const player = extractPlayerFromTitle(title);
+  if (!player){ out.innerHTML = '<p class="small">Could not read a player name from that title. Try including the full name.</p>'; return; }
+  const parsed = parseTitle(title);
+
+  // pull the player's parallel/auto family from eBay. Build queries that actually surface the
+  // NUMBERED parallels (not $2 base commons): include the product line + parallel-ish terms.
+  // A bare "[player]" search floods with cheap base cards and eats the 200-item budget before
+  // the numbered refractors appear (same junk-flood problem the main scanner had).
+  let items = [];
+  try {
+    const seen = new Set();
+    const queries = [];
+    if (parsed.product){
+      queries.push(player+" "+parsed.product+" refractor");   // numbered refractors of THIS product
+      queries.push(player+" "+parsed.product+" auto");
+      queries.push(player+" "+parsed.product);
+    }
+    queries.push(player+" auto");
+    queries.push(player+" refractor");
+    // de-dup queries, run each
+    for (const qq of [...new Set(queries)]){
+      const part = await fetchListings(qq);
+      for (const it of part){ if (!seen.has(it.id)){ seen.add(it.id); items.push(it); } }
+    }
+  } catch(e){
+    out.innerHTML = '<p class="small">⚠️ '+(""+e.message).replace(/</g,"&lt;")+' — is your Worker URL set?</p>';
+    return;
+  }
+
+  // parse + keep licensed cards of THIS player — AND the SAME product line + year.
+  // A 2026 Topps Heritage /50 must only ladder against other 2026 Heritage parallels,
+  // never a 2022 Bowman Chrome or 2024 Finest that merely shares the player + a print run.
+  const lastNm = player.toLowerCase().split(/\s+/).pop();
+  const fullNm = player.toLowerCase();
+  const myProduct = parsed.product;
+  const myYear = parsed.year;
+  // other watchlist players whose presence in a title means it's NOT our card
+  let otherPlayers = [];
+  try {
+    if (typeof watchlist !== "undefined") otherPlayers = watchlist.map(w=>w.player).filter(p=>p && p.toLowerCase()!==fullNm).map(p=>p.toLowerCase());
+  } catch(e){}
+  const namesAnotherPlayer = (t)=> otherPlayers.some(op => t.includes(op));
+  const myAuto = parsed.auto;   // your card's auto status — comps must match (auto vs non-auto are different cards)
+  const cards = items.map(it=>({...it, parsed:parseTitle(it.title)}))
+    .filter(it=>{
+      const t = it.title.toLowerCase();
+      return it.parsed.product && !it.parsed.lot && !it.parsed.digital && !it.parsed.ip && !it.parsed.oddSize && it.price!=null
+          && t.includes(lastNm)                              // has our player's last name
+          && !namesAnotherPlayer(t)                          // and does NOT name a different watchlist player
+          && (!myProduct || it.parsed.product === myProduct) // same product line
+          && (!myYear || it.parsed.year === myYear)          // same year
+          && (it.parsed.auto === myAuto);                    // same auto status (auto ↔ auto, non-auto ↔ non-auto)
+    });
+
+  if (!cards.length){
+    let why = myProduct ? `No other ${myYear||""} ${myProduct} ${player} parallels came back to compare against.` 
+                        : `No licensed ${player} listings came back to compare against.`;
+    out.innerHTML = `<p class="small">${why} (Card Check ladders only same-product, same-year parallels.)</p>`;
+    return;
+  }
+
+  // Build the LADDER: group by print run (the scarcity axis). Keep full listings so we can
+  // link the cheapest one in each tier (the "low" is the actionable buy).
+  const tiers = {};   // printRun -> [{price, url, title}]
+  for (const c of cards){
+    const pr = c.parsed.printRun || (c.parsed.auto ? "auto-unnum" : "unnum");
+    (tiers[pr] = tiers[pr] || []).push({ price: totalCost(c), url: c.url, title: c.title });
+  }
+  const pricesOf = (arr)=>arr.map(x=>x.price);
+  function med(arr){ const a=pricesOf(arr).slice().sort((x,y)=>x-y); const m=Math.floor(a.length/2); return a.length? (a.length%2?a[m]:(a[m-1]+a[m])/2):null; }
+  function lowest(arr){ return arr.slice().sort((x,y)=>x.price-y.price)[0]; }   // cheapest listing object in tier
+  // sort tiers by scarcity (lower print = scarcer = first); non-numeric last
+  const tierKeys = Object.keys(tiers).sort((a,b)=>{
+    const na=+a, nb=+b; if(isNaN(na)&&isNaN(nb))return 0; if(isNaN(na))return 1; if(isNaN(nb))return -1; return na-nb;
+  });
+
+  // Find the tier matching the PASTED card's print run
+  const myPR = parsed.printRun || (parsed.auto ? "auto-unnum" : "unnum");
+  const myTier = tiers[myPR] || [];
+  const myMed = med(myTier);
+  const myLowObj = myTier.length ? lowest(myTier) : null;
+  const myLow = myLowObj ? myLowObj.price : null;
+
+  // tilt
+  const tilt = tiltForName(player);
+  const fwdMid = myMed!=null ? myMed * tilt : null;
+
+  // ----- LOG this check so re-checking the same card later shows the change over time -----
+  // Stable key = player + product + year + print run (the same card next time = same key).
+  let priorCheck = null, checkDelta = null;
+  if (myMed != null){
+    const checkKey = [player, myProduct||"?", myYear||"?", (myPR||"unnum")].join(" | ").toLowerCase();
+    const arr = cardCheckLog[checkKey] = cardCheckLog[checkKey] || [];
+    const today = todayStr();
+    // grab the most recent PRIOR snapshot (before today) to show movement
+    const beforeToday = arr.filter(x => x.d !== today);
+    if (beforeToday.length){ priorCheck = beforeToday[beforeToday.length-1]; checkDelta = myMed - priorCheck.med; }
+    const last = arr[arr.length-1];
+    if (last && last.d === today){ last.med=+myMed.toFixed(2); last.low=+(myLow||0).toFixed(2); last.n=myTier.length; last.tilt=tilt; }
+    else arr.push({ d: today, med:+myMed.toFixed(2), low:+(myLow||0).toFixed(2), n:myTier.length, tilt });
+    if (arr.length > 30) arr.splice(0, arr.length-30);
+    // ALSO roll into player-level all-licensed aggregate (all years, all products of this player)
+    recordPlayerAggregate(player, cards);
+    try { save("cs_cardCheckLog", cardCheckLog); } catch(e){}
+  }
+
+  // ----- verdict on the asking price (if given) vs this card's own comps -----
+  let verdict = "", vcls = "";
+  if (askPrice!=null && myMed!=null){
+    const ratio = askPrice/myMed;
+    if (ratio <= 0.85){ verdict = `STRONG BUY — $${askPrice.toFixed(2)} is ${Math.round((1-ratio)*100)}% below the $${myMed.toFixed(2)} median for this card`; vcls="cc-good"; }
+    else if (ratio <= 1.05){ verdict = `FAIR — $${askPrice.toFixed(2)} is about market ($${myMed.toFixed(2)} median)`; vcls="cc-fair"; }
+    else { verdict = `OVERPRICED — $${askPrice.toFixed(2)} is ${Math.round((ratio-1)*100)}% ABOVE the $${myMed.toFixed(2)} median`; vcls="cc-bad"; }
+  } else if (myMed!=null){
+    verdict = `Market median for this card (${myPR==="unnum"?"unnumbered":(""+myPR).includes("auto")?"auto":"/"+myPR}): $${myMed.toFixed(2)} (low $${myLow.toFixed(2)})`;
+    vcls="cc-fair";
+  } else {
+    // No comp at the exact tier (e.g. your /50 is the only one — none else listed right now).
+    // Estimate from the surrounding ladder: scarcer tier sets a floor, higher-print tier a ceiling.
+    const myPrNum = (myPR==="unnum") ? null : (+myPR||null);
+    let estimate = null, basis = "";
+    if (myPrNum){
+      // nearest tier MORE scarce (lower number) and nearest LESS scarce (higher number)
+      let scarcer=null, looser=null;
+      for (const k of tierKeys){
+        const kn = +k; if (isNaN(kn)) continue;
+        const m = med(tiers[k]); if (m==null) continue;
+        if (kn < myPrNum && (!scarcer || kn>scarcer.pr)) scarcer={pr:kn, med:m};
+        if (kn > myPrNum && (!looser || kn<looser.pr)) looser={pr:kn, med:m};
+      }
+      if (scarcer && looser){
+        // your card sits between them; weight by how close in print run (log scale-ish, simple lerp)
+        const mid = (scarcer.med + looser.med)/2;
+        estimate = mid; basis = `between /${looser.pr} ($${looser.med.toFixed(0)}) and /${scarcer.pr} ($${scarcer.med.toFixed(0)})`;
+      } else if (looser){
+        estimate = looser.med * 1.4; basis = `scaled up from the /${looser.pr} tier ($${looser.med.toFixed(0)}); /${myPrNum} is scarcer`;
+      } else if (scarcer){
+        estimate = scarcer.med * 0.75; basis = `scaled down from the /${scarcer.pr} tier ($${scarcer.med.toFixed(0)}); /${myPrNum} is more common`;
+      }
+    }
+    if (estimate!=null){
+      verdict = `No /${myPR} currently listed — estimated ~$${estimate.toFixed(2)} (${basis}). Verify when a /${myPR} appears.`;
+      vcls="cc-fair";
+      if (askPrice!=null){
+        const r = askPrice/estimate;
+        const tag = r<=0.85 ? "looks like a BUY" : r<=1.10 ? "looks fair" : "looks rich";
+        verdict = `No /${myPR} listed for a direct comp — estimated ~$${estimate.toFixed(2)} (${basis}). At $${askPrice.toFixed(2)}, ${tag} vs the estimate.`;
+      }
+    } else {
+      verdict = `No direct comps found for the /${myPR} tier — see the ladder below for nearby parallels`;
+    }
+    vcls=vcls||"cc-fair";
+  }
+
+  // ----- cheaper alternatives: tiers priced BELOW this card's median -----
+  let cheaper = [];
+  if (myMed!=null){
+    for (const k of tierKeys){
+      const m = med(tiers[k]); if (m==null) continue;
+      const lw = lowest(tiers[k]);
+      if (m < myMed*0.9 && k!==(""+myPR)) cheaper.push({tier:k, med:m, n:tiers[k].length, lowObj:lw});
+    }
+  }
+
+  // ----- render -----
+  let html = '<div class="cc-card">';
+  html += `<div class="cc-head">${player} — <span class="small">${title.replace(/</g,"&lt;")}</span></div>`;
+  html += `<div class="small" style="color:#667085;margin:-4px 0 8px">Laddering against ${myYear||"?"} ${myProduct||"all"} parallels only (${cards.length} comps).</div>`;
+
+  // movement on THIS exact card since you last checked it
+  if (priorCheck && checkDelta != null){
+    const pct = priorCheck.med ? (checkDelta/priorCheck.med*100) : 0;
+    const up = checkDelta >= 0;
+    const ageD = daysBetween(priorCheck.d, todayStr());
+    html += `<div class="cc-since ${up?'cc-up':'cc-down'}">${up?'▲':'▼'} This card's median moved ${up?'+':''}$${checkDelta.toFixed(2)} (${up?'+':''}${pct.toFixed(0)}%) since you last checked it ${ageD}d ago ($${priorCheck.med.toFixed(2)} → $${myMed.toFixed(2)})</div>`;
+  }
+  // player's OVERALL licensed-card trend (all years/products) — the general direction
+  const aggTrend = playerAggTrend(player);
+  if (aggTrend) html += `<div class="cc-agg">📊 ${player} overall (all licensed cards): ${aggTrend}</div>`;
+  html += `<div class="cc-verdict ${vcls}">${verdict}</div>`;
+  if (fwdMid!=null){
+    const lo=(fwdMid*0.9), hi=(fwdMid*1.1);
+    html += `<div class="cc-tilt">Tilt ${tilt.toFixed(2)}x → forward FMV midpoint $${fwdMid.toFixed(2)} (range $${lo.toFixed(2)}–$${hi.toFixed(2)})</div>`;
+    if (askPrice && myMed!=null){
+      const et = effectiveTilt(player), adj = myMed*et, d = (adj-askPrice)/adj;
+      const pr = Math.round((MARKET_PRICED[marketTier(player)]||0.75)*100);
+      const good = d>=0.15;
+      html += `<div class="cc-tilt" style="background:${good?'#eef7ee':'#fdf0e6'};color:${good?'#1a6b1a':'#b54708'}">Edge-adjusted (${marketTier(player)} · market prices ~${pr}% of our view): $${askPrice.toFixed(2)} vs tilt-adj FMV $${adj.toFixed(2)} = <b>${Math.abs(d*100).toFixed(0)}% ${d>=0?'below':'ABOVE'}</b> ${good?'— confirmed even after our haircut':'— thin edge; market may share our read'}</div>`;
+    }
+  }
+  if (cheaper.length){
+    html += '<div class="cc-alt">💡 Cheaper alternatives in the ladder: ' +
+      cheaper.map(c=>{
+        const lbl = (""+c.tier).includes("auto")?"auto":isNaN(+c.tier)?c.tier:"/"+c.tier;
+        const link = c.lowObj && c.lowObj.url ? ` (<a href="${c.lowObj.url}" target="_blank">low $${c.lowObj.price.toFixed(0)} →</a>)` : "";
+        return `<b>${lbl}</b> ~$${c.med.toFixed(0)}${link}`;
+      }).join(" · ") + '</div>';
+  }
+  // ----- BEST VALUE: the tier whose LOW is the deepest discount vs its own median, and is scarcer-or-equal -----
+  let bestValue = null;
+  for (const k of tierKeys){
+    const arr = tiers[k]; const m = med(arr); const lw = lowest(arr);
+    if (m==null || !lw) continue;
+    const disc = 1 - (lw.price/m);                 // how far the cheapest sits below this tier's median
+    const prNum = isNaN(+k) ? 99999 : +k;          // scarcity (lower print = scarcer)
+    if (disc >= 0.30 && lw.price < (myMed||Infinity)*1.1){   // meaningfully discounted AND not pricier than your card
+      if (!bestValue || disc > bestValue.disc) bestValue = { tier:k, med:m, lowObj:lw, disc, prNum };
+    }
+  }
+  if (bestValue){
+    const lbl = (""+bestValue.tier).includes("auto")?"auto":isNaN(+bestValue.tier)?"unnumbered":"/"+bestValue.tier;
+    html += `<div class="cc-best">⭐ Best value on the board: <b>${lbl}</b> at <b>$${bestValue.lowObj.price.toFixed(2)}</b> — ${Math.round(bestValue.disc*100)}% below its tier median ($${bestValue.med.toFixed(2)}). <a href="${bestValue.lowObj.url}" target="_blank">→ view listing</a></div>`;
+  }
+
+  // full ladder table — LOW is now a clickable link to the cheapest listing in that tier
+  html += '<table class="cc-ladder"><tr><th>Tier</th><th>Median ask</th><th>Low (cheapest listing)</th><th>#</th></tr>';
+  for (const k of tierKeys){
+    const arr = tiers[k]; const m = med(arr); const lw = lowest(arr);
+    const isMine = (k===(""+myPR));
+    const label = (""+k).includes("auto")?"auto (unnum)":isNaN(+k)?"unnumbered":"/"+k;
+    const lowCell = lw.url ? `<a href="${lw.url}" target="_blank">$${lw.price.toFixed(2)} →</a>` : `$${lw.price.toFixed(2)}`;
+    html += `<tr class="${isMine?'cc-mine':''}"><td>${label}${isMine?' ← this card':''}</td><td>$${m.toFixed(2)}</td><td>${lowCell}</td><td>${arr.length}</td></tr>`;
+  }
+  html += '</table>';
+
+  // ----- GRADE CANDIDATE: if graded comps exist and the raw→PSA9/10 spread is big, flag it -----
+  // Uses the same comp set; compares this tier's RAW median to graded sales of the same card.
+  const gradedComps = cards.filter(c => c.parsed.graded && (c.parsed.printRun||null)===(myPR==="unnum"?null:(+myPR||null)));
+  // fall back: any graded comp of this product/year/player if none match the exact tier
+  const gradedPool = gradedComps.length ? gradedComps : cards.filter(c => c.parsed.graded);
+  if (gradedPool.length && myMed != null){
+    const byGrade = {};
+    for (const c of gradedPool){ (byGrade[c.parsed.graded]=byGrade[c.parsed.graded]||[]).push(totalCost(c)); }
+    // prefer the highest-value grade tier present (PSA 10 > 9.5 > 9 …)
+    const gradeKeys = Object.keys(byGrade).sort((a,b)=>{
+      const gv=g=>parseFloat((g.match(/[\d.]+/)||[0])[0]);
+      return gv(b)-gv(a);
+    });
+    const topGrade = gradeKeys[0];
+    const gMed = med(byGrade[topGrade].map(p=>({price:p})));
+    const spread = gMed - myMed;
+    const mult = myMed>0 ? gMed/myMed : 0;
+    if (mult >= 1.8 && spread >= 25){   // graded sells for ~1.8x+ raw AND a meaningful $ gap
+      html += `<div class="cc-grade">🏅 Grade candidate: raw median $${myMed.toFixed(2)} vs <b>${topGrade}</b> median <b>$${gMed.toFixed(2)}</b> (${mult.toFixed(1)}x). If grading cost + risk is below the ~$${spread.toFixed(0)} spread, worth submitting.</div>`;
+    }
+  }
+
+  html += `<div class="small" style="margin-top:6px;color:#667085">Based on ${cards.length} live licensed listings. Asking prices, not solds — directional. Scarcer tiers should command premiums; if a lower-print tier shows cheaper, that's a buy signal.</div>`;
+
+  // ---- CONTEXT: same product line, ALL years (is this set appreciating year-over-year?) ----
+  if (myProduct){
+    const allYears = items.map(it=>({...it, parsed:parseTitle(it.title)}))
+      .filter(it=> it.parsed.product===myProduct && !it.parsed.lot && !it.parsed.digital && !it.parsed.ip && !it.parsed.oddSize
+                && it.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").includes(lastNm.normalize("NFD").replace(/[\u0300-\u036f]/g,"")) && it.price!=null && it.parsed.auto===myAuto);
+    // group by year — keep full listing objects so each low is a clickable link
+    const byYear = {};
+    for (const c of allYears){ const y=c.parsed.year||"?"; (byYear[y]=byYear[y]||[]).push({ price:totalCost(c), url:c.url, pr:(c.parsed.printRun||null) }); }
+    const years = Object.keys(byYear).filter(y=>y!=="?").sort();
+    if (years.length > 1){
+      // ----- best CROSS-YEAR deal at your tier-or-scarcer: the actionable "buy this instead" -----
+      // compare like-for-like: only cards whose print run is <= yours (same scarcity or rarer).
+      const myPrNum = (myPR==="unnum") ? null : (+myPR||null);
+      let crossDeal = null;
+      if (myPrNum && myMed!=null){
+        for (const c of allYears){
+          if (!c.url) continue;
+          const pr = c.parsed.printRun;
+          if (!pr || pr > myPrNum) continue;             // must be same tier or scarcer
+          const px = totalCost(c);
+          if (px < myMed*0.7){                           // ≥30% below YOUR card's median
+            if (!crossDeal || px < crossDeal.price) crossDeal = { price:px, url:c.url, year:c.parsed.year, pr };
+          }
+        }
+      }
+      if (crossDeal){
+        const pctOff = Math.round((1 - crossDeal.price/myMed)*100);
+        html += `<div class="cc-cross">🔀 Cross-year deal: a ${crossDeal.year} /${crossDeal.pr} (same tier or scarcer than yours) at <b>$${crossDeal.price.toFixed(2)}</b> — ${pctOff}% below your card's $${myMed.toFixed(2)} median. <a href="${crossDeal.url}" target="_blank">→ buy this instead</a></div>`;
+      }
+
+      html += `<details class="cc-years"><summary>${myProduct} across all years (context — is the set trending?)</summary>`;
+      html += '<table class="cc-ladder"><tr><th>Year</th><th>Median ask</th><th>Low (cheapest listing)</th><th>#</th></tr>';
+      for (const y of years){
+        const a = byYear[y];
+        const mm = med(a);                               // a is now objects with .price
+        const lwObj = lowest(a);
+        const isMine = (+y===myYear);
+        const lowCell = lwObj.url ? `<a href="${lwObj.url}" target="_blank">$${lwObj.price.toFixed(2)} →</a>` : `$${lwObj.price.toFixed(2)}`;
+        html += `<tr class="${isMine?'cc-mine':''}"><td>${y}${isMine?' ← your year':''}</td><td>$${mm.toFixed(2)}</td><td>${lowCell}</td><td>${a.length}</td></tr>`;
+      }
+      html += '</table><div class="small" style="margin-top:4px;color:#667085">All print runs pooled per year for the median (directional, not a like-for-like comp). The cross-year deal above only counts cards at your tier or scarcer.</div></details>';
+    }
+  }
+  html += '</div>';
+  out.innerHTML = html;
 }
 
 async function scanOneOff(){
@@ -1183,10 +1640,14 @@ function applyFilters(items){
   const chromeOnly = document.getElementById("fChrome").checked;
   const rawOnly  = document.getElementById("fRaw").checked;
   const maxPrint = +document.getElementById("fMaxPrint").value;
+  const wantAuctions = document.getElementById("fBuying").value === "AUCTION";
   return items.filter(it => {
     const p = it.parsed;
+    if (!wantAuctions && isPureAuction(it)) return false;   // opening bids aren't market prices
     if (p.lot) return false;
     if (p.digital) return false;                          // skip Topps Bunt / digital-only cards
+    if (p.ip) return false;                               // skip in-person / fan-signed / COA autos
+    if (p.oddSize) return false;                          // skip mini / 5x7 / oversized / box-toppers
     if (numbered && !p.printRun && !p.auto) return false;   // framework: numbered OR auto
     if (!autosOk && p.auto) return false;
     if (chromeOnly && !p.chrome) return false;
@@ -1198,6 +1659,13 @@ function applyFilters(items){
 }
 
 function totalCost(it){ return it.price + (it.shipping || 0); }
+// A PURE auction (live bid, no Buy-It-Now) is an aspirational FLOOR, not a settled price — it must
+// never feed FMV or the arb. A hybrid (auction + BIN) keeps its BIN price, which is a real buy price.
+// The eBay API's buyingOptions filter is not airtight (hybrids/pure auctions leak), so we guard here.
+function isPureAuction(it){
+  const b = it.buyingOptions || [];
+  return b.includes("AUCTION") && !b.includes("FIXED_PRICE");
+}
 
 function median(nums){
   const s = [...nums].sort((a,b)=>a-b), n = s.length;
@@ -1206,6 +1674,7 @@ function median(nums){
 }
 // TILT: forward-conviction multiplier (0.5-1.5). Where the card is HEADING, not its price today.
 // Explicit per-player in the brain; falls back to posture mapping, then neutral 1.0.
+function resetIntelOverrides(){ if(!confirm("Clear saved intel overrides and use brain tilts? Use after deploying brain-baked tilts.")) return; tiltOverride={}; save("cs_tiltOverride",{}); alert("Cleared. Brain tilts are now source of truth. Re-scan to see them."); }
 function tiltFor(player){
   const b = brainFor(player); if (!b) return 1.0;
   // accepted intel changes win over the static brain value
@@ -1218,10 +1687,29 @@ function tiltFor(player){
 function tierWeight(player){ return tiltFor(player); }
 // 12-month forward value = today's market FMV projected by forward conviction (tilt)
 function forwardValue(fmv, player){ return (fmv == null) ? null : fmv * tiltFor(player); }
+
+// ---- MARKET-EFFICIENCY / EDGE ----------------------------------------------------------------
+// Tilt is our FULL conviction. But today's FMV already prices in whatever the market knows. Our
+// actionable EDGE is only the slice the market hasn't caught up on yet — bigger in thin prospect
+// markets, smaller for followed MLB names. effective deal-tilt = 1 + EDGE * (tilt - 1).
+// Forward VALUE (12-mo) still uses the FULL tilt; this dampened tilt is only for "is it a deal TODAY".
+
+function marketTier(player){ return MKT_TIER[(player||"").toLowerCase().trim()] || "star"; }
+function edgeFactor(player){ const p = MARKET_PRICED[marketTier(player)]; return 1 - (p==null?0.75:p); } // star .25/mid .40/deep .55
+function effectiveTilt(player){ const t = tiltFor(player); return +(1 + edgeFactor(player)*(t-1)).toFixed(3); }
+// chip showing the discount vs the edge-dampened (tilt-adjusted) FMV, beside the honest raw discount
+function edgeDiscChip(fmv, cost, player){
+  if (fmv==null || cost==null) return "";
+  const et = effectiveTilt(player), adj = fmv*et, d = (adj-cost)/adj;
+  const cls = d>=0.15 ? "disc-good" : "disc-bad";
+  const sign = d>=0 ? "below" : "ABOVE";
+  const pr = Math.round((MARKET_PRICED[marketTier(player)]||0.75)*100);
+  return ` <span class="small ${cls}" title="FMV haircut by our conviction, dampened to the ${100-pr}% the market hasn't priced yet (${marketTier(player)}). Still cheap = confirmed deal; near 0 or ABOVE = market may already share our read.">· vs tilt-adj FMV (${et.toFixed(2)}×): ${Math.abs(d*100).toFixed(0)}% ${sign}</span>`;
+}
 // FMV for a card identity: your manual override wins; else the live market median (needs 3+ listings)
 function fmvFor(key, list){
   if (fmvBook[key] && fmvBook[key] > 0) return { fmv: fmvBook[key], src: "yours" };
-  if (list.length >= 3) return { fmv: median(list.map(totalCost)), src: "market" };
+  if (list.length >= 2) return { fmv: median(list.map(totalCost)), src: "market" };  // 2+ gives a usable median given how specific identities are
   return { fmv: null, src: null };
 }
 function dealLabel(disc){
@@ -1300,6 +1788,38 @@ function driftVsTilt(player, drift){
   }
   return { tilt, absorbed, verdict, cls, suggestReanchor, suggestedTilt, drift };
 }
+// describe a player's overall licensed-card price movement from the aggregate series
+function playerAggTrend(player){
+  const arr = playerAgg[(player||"").toLowerCase().trim()] || [];
+  if (arr.length < 2) return arr.length===1 ? `first snapshot logged today ($${arr[0].med.toFixed(2)} median across ${arr[0].n} cards) — check again later to see movement` : "";
+  const cur = arr[arr.length-1];
+  const old = snapshotDaysAgo(arr, 90) || arr[0];
+  if (!old || !old.med) return "";
+  const delta = cur.med - old.med;
+  const pct = old.med ? (delta/old.med*100) : 0;
+  const ageD = daysBetween(old.d, cur.d);
+  if (Math.abs(pct) < 3) return `flat (~$${cur.med.toFixed(2)} median) over ${ageD}d`;
+  return `${delta>=0?'▲ up':'▼ down'} ${delta>=0?'+':''}${pct.toFixed(0)}% over ${ageD}d ($${old.med.toFixed(2)} → $${cur.med.toFixed(2)} median across ~${cur.n} live cards)`;
+}
+
+// roll ALL licensed cards of a player (any year, any product) into one general price-movement series.
+// This is the "is Harrison appreciating overall?" signal, separate from any single card.
+function recordPlayerAggregate(player, cards){
+  if (!player || !cards || !cards.length) return;
+  const today = todayStr();
+  const prices = cards.map(c => totalCost(c)).filter(p => p > 0).sort((a,b)=>a-b);
+  if (prices.length < 3) return;
+  const m = prices[Math.floor(prices.length/2)];
+  const low = prices[0];
+  const key = player.toLowerCase().trim();
+  const arr = playerAgg[key] = playerAgg[key] || [];
+  const last = arr[arr.length-1];
+  if (last && last.d === today){ last.med=+m.toFixed(2); last.low=+low.toFixed(2); last.n=prices.length; }
+  else arr.push({ d: today, med:+m.toFixed(2), low:+low.toFixed(2), n:prices.length });
+  if (arr.length > 60) arr.splice(0, arr.length-60);
+  try { save("cs_playerAgg", playerAgg); } catch(e){}
+}
+
 // record a dated median snapshot for each investment-grade card (auto or numbered, 3+ listings)
 function recordHistory(groups){
   const today = todayStr();
@@ -1394,6 +1914,7 @@ function processResults(record=false){
   const items = all.filter(it => it.parsed.product);      // LICENSED / recognized products only
   const hidden = all.length - items.length;               // unlicensed (Leaf/Panini/IP) dropped
 
+
   // group by exact card identity
   const groups = {};
   for (const it of items) {
@@ -1416,7 +1937,9 @@ function processResults(record=false){
       // 2-axis rank: discount today (value) + forward conviction (growth). Both upsides float to top.
       // disc can be negative (over market); (tilt-1) is the growth tilt above/below neutral.
       const score = disc + 0.5 * (tilt - 1);
-      const row = { key, item: cheapest, fmv, src, disc, tilt, fwd, score, count: list.length, lo, hi };
+      const fmvAdj = fmv * effectiveTilt(cheapest.player);
+      const discAdj = fmvAdj ? (fmvAdj - totalCost(cheapest))/fmvAdj : null;
+      const row = { key, item: cheapest, fmv, src, disc, tilt, fwd, discAdj, score, count: list.length, lo, hi };
       if (disc >= 0.10 && totalCost(cheapest) >= 3) strong.push(row);   // a real below-market buy
       else if (disc >= -0.08) radar.push(row);                          // fairly priced — visibility only
     } else {
@@ -1424,13 +1947,28 @@ function processResults(record=false){
       radar.push({ key, item: cheapest, fmv:null, src:null, disc:null, tilt, fwd:null, score:0.5*(tilt-1), count:list.length, lo, hi, thin:true });
     }
   }
-  strong.sort((a,b)=> b.score - a.score);                 // best discount × tier first
+  // Sort STRONG BUYS by pure discount, highest first (you want the deepest deals at the top).
+  // Tilt is a secondary tiebreaker only, so equal-discount cards order by forward conviction.
+  strong.sort((a,b)=> (b.disc - a.disc) || (tiltFor(b.item.player) - tiltFor(a.item.player)));
   radar.sort((a,b)=> tiltFor(b.item.player) - tiltFor(a.item.player));
 
+  window.lastStrongRows = strong;   // keep for the live discount filter
   renderStrong(strong, hidden);
   renderRadar(radar);
   renderFmvTable(groups);
   renderTrends();
+  // Scarcity arbitrage runs on the FULL licensed scan — NOT the display-filtered subset.
+  // The scan's max-print / chrome-only / numbered-only filters shape the Strong Buys view, but they
+  // must NOT limit what can serve as a scarcity anchor or target (e.g. a /499 anchor would vanish
+  // under a /150 max-print setting, deleting valid comparisons before they're ever made).
+  const arbItems = lastItems.filter(it => {
+    const p = it.parsed;
+    return p.product && !p.lot && !p.digital && !p.ip && !p.oddSize && it.price != null && !isPureAuction(it);
+  });
+  renderScarcityArb(arbItems);   // cross-tier scarcity-parity arbitrage (additive, full dataset)
+  // always tell the user the funnel result so "empty" is explained, not mysterious
+  const idCount = Object.keys(groups).length;
+  setStatus(`${lastItems.length} listings → ${items.length} licensed → ${idCount} card identities · ${strong.length} below-market, ${radar.length} on radar. ${strong.length+radar.length===0 ? "Loosen filters (uncheck Numbered-only, raise max price) to see more." : ""}`);
 }
 
 /* ============ RENDER ============ */
@@ -1449,7 +1987,7 @@ function itemRow(it, extra=""){
         ${auction?`<span class="tag auct">AUCTION${it.bidCount!=null?" · "+it.bidCount+" bids":""}</span>`:""}
         <div class="small">${esc(it.parsed.product||"")} ${esc(it.parsed.parallel||"")}</div>
         ${intelLine(it.player)}</td>
-    <td class="price">$${totalCost(it).toFixed(2)}<div class="small">${it.shipping?`incl $${it.shipping.toFixed(2)} ship`:"free ship"}</div></td>
+    <td class="price">$${totalCost(it).toFixed(2)}<div class="small">${it.shipping?`$${it.price.toFixed(2)} item + $${it.shipping.toFixed(2)} ship`:"free ship"}</div></td>
     ${extra}
     <td class="small">${esc(it.seller||"")}${it.feedbackPct?` · ${it.feedbackPct}%`:""}</td>
   </tr>`;
@@ -1509,18 +2047,278 @@ function driftCell(key, currentMedian, player){
   return line;
 }
 
+// ===== CROSS-TIER SCARCITY ARBITRAGE =====
+// Within one silo (same player + year + product + auto-status), a scarcer card should cost MORE
+// in proportion to its rarity — but the market prices rarity on a DAMPENED curve, not linearly.
+// We model it as parity multiple = (looser_run / scarcer_run) ^ SCARCITY_EXP.
+//   EXP = 1.0 is linear (over-predicts the scarce end), 0.5 is √ (too cold, finds few deals),
+//   0.65 is the current setting — flatter at the commodity end, steeper toward chase cards.
+//   Flag a scarcer card when its lowest price is >minDisc% below that parity (median-anchored).
+// Unnumbered autos treated as /1000 supply. Each tier needs 2+ listings to anchor.
+const SCARCITY_PARITY_GUARD = 0.75;   // legacy constant (the live minDisc slider is the real bar)
+const UNNUM_AS = 800;                  // unnumbered AUTO treated as ~/800 supply — a GUESS; flags resting on it are labeled
+const SCARCITY_EXP = 0.65;             // price scales with rarity^EXP. 1.0=linear(hot), 0.5=√(cold), 0.65=current. One knob to tune.
+function parityMultiple(looserRun, scarcerRun){ return Math.pow(looserRun / scarcerRun, SCARCITY_EXP); }
+
+// Cache silos from the scan so the dropdowns can re-query without re-scanning.
+window.arbSilos = null;
+window.arbItems = null;
+
+function renderScarcityArb(items){
+  window.arbItems = items;
+  // build silos: key = player | year | product | auto. Store per-tier listing arrays.
+  const silos = {};
+  for (const it of items){
+    const p = it.parsed;
+    if (!p.product || it.price == null) continue;
+    if (p.lot || p.digital || p.ip || p.oddSize || p.graded) continue;   // arb is RAW-to-RAW; graded distorts tier medians
+    let run = p.printRun;
+    if (!run){ if (p.auto) run = UNNUM_AS; else continue; }
+    const key = [it.player, p.year||"?", p.product, p.auto?"auto":"base"].join(" | ");
+    const silo = silos[key] = silos[key] || { player: it.player, tiers: {} };
+    (silo.tiers[run] = silo.tiers[run] || []).push({ run, cost: totalCost(it), url: it.url, title: it.title, auto:p.auto });
+  }
+  window.arbSilos = silos;
+  // populate the player dropdown from silos
+  const players = [...new Set(Object.values(silos).map(s=>s.player))].sort();
+  const psel = document.getElementById("arbPlayer");
+  if (psel){
+    const cur = psel.value;
+    psel.innerHTML = '<option value="ALL">All players</option>' + players.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join("");
+    if (players.includes(cur) || cur==="ALL") psel.value = cur;
+  }
+  const ctl = document.getElementById("arbControls");
+  if (ctl) ctl.style.display = Object.keys(silos).length ? "flex" : "none";
+  renderArbFromCache();
+}
+
+const medOf = (arr)=>{ const a=arr.slice().sort((x,y)=>x-y); const m=Math.floor(a.length/2); return a.length?(a.length%2?a[m]:(a[m-1]+a[m])/2):null; };
+const lowestOf = (arr)=> arr.slice().sort((a,b)=>a.cost-b.cost)[0];
+
+// tier summary (median + cheapest), requires 2+ listings to trust the median
+function tierStat(arr){
+  // allow single-listing anchors so thin ladders still form. ANY-mode keeps the HARDEST
+  // comparison, so a lone over-priced anchor can't manufacture a flag; thin anchors are tagged.
+  if (!arr || arr.length < 1) return null;
+  return { low: lowestOf(arr).cost, lowObj: lowestOf(arr), med: medOf(arr.map(x=>x.cost)), n: arr.length };
+}
+
+function renderArbFromCache(){
+  const el = document.getElementById("scarcityArbResults");
+  if (!el || !window.arbSilos) return;
+  const silos = window.arbSilos;
+  const playerSel = (document.getElementById("arbPlayer")||{}).value || "ALL";
+  const anchorSel = (document.getElementById("arbAnchor")||{}).value || "ANY";
+  const targetSel = (document.getElementById("arbTarget")||{}).value || "ANY";
+  const minDisc = +((document.getElementById("arbMinDisc")||{}).value || 15);
+  const mdv = document.getElementById("arbMinDiscVal"); if (mdv) mdv.textContent = minDisc + "%";
+
+  const flags = [];
+  for (const [key, silo] of Object.entries(silos)){
+    if (playerSel !== "ALL" && silo.player !== playerSel) continue;
+    const tiers = silo.tiers;
+    // available tier runs sorted scarce→loose
+    const runs = Object.keys(tiers).map(Number).sort((a,b)=>a-b);
+    // pick TARGET (scarcer) tiers to evaluate
+    const targetRuns = targetSel === "ANY" ? runs.slice() : (tiers[+targetSel] ? [+targetSel] : []);
+    for (const tRun of targetRuns){
+      const tStat = tiers[tRun] ? { low: lowestOf(tiers[tRun]).cost, lowObj: lowestOf(tiers[tRun]), med: medOf(tiers[tRun].map(x=>x.cost)), n: tiers[tRun].length } : null;
+      if (!tStat) continue;   // target needs to exist (its own price is what we judge)
+
+      // ----- UNNUMBERED AUTO as the deal candidate (your Chourio case) -----
+      // An unnumbered auto has nothing LOOSER to anchor against, so judge it DOWNWARD vs its
+      // SCARCER numbered siblings: a scarcer card should cost MORE, so the unnum's parity =
+      // scarcer_median / parityMultiple(unnum, scarcer). Flag only if it sits below parity vs
+      // EVERY scarcer numbered tier (strict). Only in ANY-anchor mode; tagged unnumTarget since
+      // it leans on the ~/800 supply guess. Silo is already auto-typed, so this is always a true auto.
+      if (tRun === UNNUM_AS){
+        if (anchorSel !== "ANY") continue;             // only in ANY mode; can't anchor an unnum upward
+        let worst = null;
+        for (const r of runs){
+          if (r >= UNNUM_AS) continue;                 // numbered (scarcer) tiers only
+          const st = tierStat(tiers[r]); if (!st) continue;
+          const pm = parityMultiple(UNNUM_AS, r);      // multiple the scarcer commands over the unnum
+          const pp = st.med / pm;                       // unnum parity implied by this scarcer tier
+          const pct = Math.round((1 - tStat.low/pp) * 100);
+          if (worst === null || pct < worst.pct) worst = { run:r, st, pm, pp, pct };
+        }
+        if (!worst || worst.pct < minDisc) continue;   // no scarcer numbered depth, or not cheap enough
+        flags.push({
+          player: silo.player, key, tRun, tStat,
+          anchorRun: worst.run, anchorStat: worst.st, substituted:false,
+          scarcityRatio: UNNUM_AS / worst.run, parityMult: worst.pm,
+          parityPrice: worst.pp, pctBelow: worst.pct,
+          looserOwnDisc: worst.st.med ? Math.round((1 - worst.st.low/worst.st.med)*100) : 0,
+          unnumTarget: true
+        });
+        continue;   // handled — skip the normal scarcer-target path for this tRun
+      }
+
+      const looserRuns = runs.filter(r => r > tRun);   // strictly looser than target
+
+      let anchorRun = null, anchorStat = null, substituted = false;
+      let scarcityRatio, parityMult, parityPrice, pctBelow;
+
+      if (anchorSel === "ANY"){
+        // STRICT: the target must beat EVERY looser tier on a scarcity basis. Evaluate parity against
+        // all qualifying looser tiers and keep the SMALLEST discount (the hardest bar). EXCLUDE the
+        // unnumbered base — it's a fundamentally more common card, not a real substitute for a numbered
+        // parallel, and its dirt-cheap parity would wrongly disqualify every scarce-card flag.
+        let worstCase = null;   // smallest pctBelow across all NUMBERED anchors = the toughest test
+        for (const r of looserRuns){
+          if (r >= UNNUM_AS) continue;   // numbered anchors only
+          const st = tierStat(tiers[r]);
+          if (!st) continue;
+          const pm = parityMultiple(r, tRun);
+          const pp = st.med * pm;
+          const pct = Math.round((1 - tStat.low/pp) * 100);
+          if (worstCase === null || pct < worstCase.pct){
+            worstCase = { run:r, st, pm, pp, pct, ratio: r/tRun };
+          }
+        }
+        if (!worstCase) continue;   // no numbered looser tier at all → can't judge
+        anchorRun = worstCase.run; anchorStat = worstCase.st;
+        scarcityRatio = worstCase.ratio; parityMult = worstCase.pm;
+        parityPrice = worstCase.pp; pctBelow = worstCase.pct;
+      } else {
+        const want = +anchorSel;
+        if (want <= tRun) continue;   // anchor must be looser than target
+        if (tierStat(tiers[want])){ anchorRun = want; anchorStat = tierStat(tiers[want]); }
+        else {
+          // FALLBACK: nearest looser NUMBERED tier within ~2.5x the requested run, flagged substitute.
+          // Never jump to unnumbered when a numbered anchor was requested.
+          const maxAnchorRun = want * 2.5;
+          const candidates = looserRuns
+            .filter(r => r !== want && r < UNNUM_AS && r <= maxAnchorRun)
+            .map(r=>({r, d:Math.abs(r-want), st:tierStat(tiers[r])}))
+            .filter(c=>c.st);
+          candidates.sort((a,b)=> a.d - b.d || a.r - b.r);
+          if (candidates.length){ anchorRun = candidates[0].r; anchorStat = candidates[0].st; substituted = true; }
+        }
+        if (!anchorStat) continue;
+        scarcityRatio = anchorRun / tRun;
+        parityMult = parityMultiple(anchorRun, tRun);
+        parityPrice = anchorStat.med * parityMult;
+        pctBelow = Math.round((1 - tStat.low/parityPrice) * 100);
+      }
+      if (pctBelow < minDisc) continue;
+      const looserOwnDisc = anchorStat.med ? Math.round((1 - anchorStat.low/anchorStat.med)*100) : 0;
+      flags.push({
+        player: silo.player, key, tRun, tStat, anchorRun, anchorStat, substituted,
+        scarcityRatio, parityMult, parityPrice, pctBelow, looserOwnDisc
+      });
+    }
+  }
+  // best flag per target card
+  const bestPer = {};
+  for (const f of flags){ const k = f.key + " #" + f.tRun; if (!bestPer[k] || f.pctBelow > bestPer[k].pctBelow) bestPer[k] = f; }
+  const all = Object.values(bestPer).sort((a,b)=> b.pctBelow - a.pctBelow);
+
+  const diag = `<div class="small" style="background:#f7f8fa;border:1px solid #eceef2;border-radius:6px;padding:6px 10px;margin-bottom:8px">
+    📐 Median-anchored rarity^${SCARCITY_EXP}. ${anchorSel==="ANY"?"Must beat ALL numbered tiers (unnum excluded)":"/"+anchorSel+" anchor"} → ${targetSel==="ANY"?"any scarcer":"/"+targetSel}${playerSel!=="ALL"?" · "+esc(playerSel):""}.
+    <b>${all.length}</b> cards ≥${minDisc}% below parity. ⚠️ = substitute anchor used.</div>`;
+
+  if (!all.length){
+    // DIAGNOSTIC: when a specific player is selected, show exactly what silos/tiers exist for them,
+    // so a "no match" is explainable (split silos, missing anchor, thin tiers) rather than mysterious.
+    let dump = "";
+    if (playerSel !== "ALL"){
+      const pSilos = Object.entries(silos).filter(([k,s]) => s.player === playerSel);
+      if (pSilos.length){
+        dump = `<div class="small" style="margin-top:8px;color:#475467"><b>What the scanner sees for ${esc(playerSel)}:</b><br>` +
+          pSilos.map(([k,s]) => {
+            const [pl, yr, prod, au] = k.split(" | ");
+            const tierStr = Object.entries(s.tiers).sort((a,b)=>+a[0]-+b[0])
+              .map(([run, arr]) => `${run>=UNNUM_AS?"unnum":"/"+run}(${arr.length}, low $${Math.min(...arr.map(x=>x.cost)).toFixed(2)})`).join(", ");
+            return `&nbsp;&nbsp;<b>${yr} ${esc(prod)} ${au}</b>: ${tierStr}`;
+          }).join("<br>") +
+          `<br><br>Each line is a separate silo. A /50 and its anchor must be on the SAME line (same year+product+auto) to compare. Anchor tiers now form on 1+ listing (thin anchors are tagged).</div>`;
+      } else {
+        dump = `<div class="small" style="margin-top:8px;color:#b54708">No silos found for ${esc(playerSel)} at all — likely a stale scan (re-run a fresh scan) or the player's cards parsed into an unexpected product.</div>`;
+      }
+    }
+    el.innerHTML = diag + `<p class="small">No cards match this anchor→target at ≥${minDisc}% below parity. Try "Any", a different tier, or lower the slider.</p>` + dump;
+    return;
+  }
+  el.innerHTML = diag + `<table><tr><th>Target card (the buy)</th><th>Price</th><th>vs anchor tier</th><th>Parity</th></tr>` +
+    all.slice(0,250).map(f => {
+      const [player, year, product] = f.key.split(" | ");
+      const runLbl = f.tRun >= UNNUM_AS ? "unnum auto" : "/"+f.tRun;
+      const anchorLbl = f.anchorRun >= UNNUM_AS ? "unnum" : "/"+f.anchorRun;
+      const link = f.tStat.lowObj.url ? `<a href="${f.tStat.lowObj.url}" target="_blank">$${f.tStat.low.toFixed(2)} →</a>` : `$${f.tStat.low.toFixed(2)}`;
+      const fire = f.pctBelow >= 25 ? '🔥 ' : '';
+      const thin = f.tStat.n < 2 ? ' <span class="small" style="color:#b54708">· 1 listing</span>' : '';
+      const sub = f.substituted ? ` <span class="small" style="color:#b54708">⚠️ substitute anchor (no /${(document.getElementById("arbAnchor")||{}).value} listed)</span>` : '';
+      const thinAnchor = (f.anchorStat && f.anchorStat.n < 2) ? ` <span class="small" style="color:#b54708">· anchor is 1 listing</span>` : '';
+      const dbl = f.looserOwnDisc >= 15 ? `<div class="small" style="color:#1a6e32">⭐ double-deal: the ${anchorLbl} anchor is itself ${f.looserOwnDisc}% below its median</div>` : '';
+      return `<tr>
+        <td>${fire}<b>${esc(player)}</b> ${year} ${esc(product)} <b>${runLbl}</b> ${f.tStat.auto?'<span class="small">auto</span>':''}${thin}
+          <div class="small">${esc(f.tStat.lowObj.title||"").slice(0,70)}</div>${dbl}</td>
+        <td class="price">${link}</td>
+        <td>${f.unnumTarget
+            ? `vs scarcer <b>${anchorLbl}</b> (med $${f.anchorStat.med.toFixed(2)}) — an unnum auto should trade ~${(1/f.parityMult).toFixed(2)}x of it${thinAnchor}<div class="small" style="color:#b54708">⚠️ leans on the ~/${UNNUM_AS} supply guess — indicative</div>`
+            : `<span class="disc-good">${f.scarcityRatio.toFixed(1)}x rarer</span> than ${anchorLbl} (med $${f.anchorStat.med.toFixed(2)})${sub}${thinAnchor}<div class="small">expected ${f.parityMult.toFixed(2)}x vs median (rarity^${SCARCITY_EXP})</div>`
+        }</td>
+        <td><b>${f.pctBelow}% below</b><div class="small">parity ~$${f.parityPrice.toFixed(2)}</div></td>
+      </tr>`;
+    }).join("") + "</table>";
+}
+
 function renderStrong(rows, hidden){
   const el = document.getElementById("arbResults");
   const note = hidden ? `<p class="small">🚫 ${hidden} unlicensed / unrecognized listing(s) hidden (Leaf, Panini, in-person, off-brand).</p>` : "";
+  // show the live discount filter control once we have results
+  const wrap = document.getElementById("discFilterWrap");
+  if (wrap) wrap.style.display = rows.length ? "flex" : "none";
   if (!rows.length) { el.innerHTML = note + `<p class="small">No below-market buys in this scan. (Cheapest listings are at or above where each card's market sits.)</p>`; return; }
+  // apply the live discount BAND (dual slider), then cap at 100
+  const minEl = document.getElementById("discMin"), maxEl = document.getElementById("discMax");
+  const lo = (minEl ? +minEl.value : 10) / 100;
+  const hiRaw = maxEl ? +maxEl.value : 80;
+  const hi = hiRaw >= 80 ? Infinity : hiRaw / 100;   // 80 = "80%+", no upper bound
+  const filtered = rows.filter(r => r.disc >= lo && r.disc <= hi);
+  const shown = filtered.slice(0,100);
+  // update the count readout
+  const cntEl = document.getElementById("discFilterCount");
+  if (cntEl){
+    const bandTxt = hi===Infinity ? `≥ ${(lo*100).toFixed(0)}%` : `${(lo*100).toFixed(0)}–${(hi*100).toFixed(0)}%`;
+    cntEl.textContent = `${filtered.length} cards ${bandTxt} off` + (filtered.length>100 ? ` (showing top 100)` : ``);
+  }
+  if (!shown.length){
+    const bandTxt = hi===Infinity ? `≥ ${(lo*100).toFixed(0)}%` : `${(lo*100).toFixed(0)}–${(hi*100).toFixed(0)}%`;
+    el.innerHTML = note + `<p class="small">No cards in the ${bandTxt} discount band. Widen the range.</p>`; return;
+  }
   el.innerHTML = note + `<table><tr><th></th><th>Card / Cheapest Listing</th><th>Price</th><th>vs Market (today)</th><th>Tilt → 12mo Fwd</th><th>Seller</th></tr>` +
-    rows.slice(0,30).map(r => {
+    shown.map(r => {
       const lab = dealLabel(r.disc);
       return itemRow(r.item, `<td>
-        <span class="deal ${lab.cls}">${lab.txt}</span> <span class="disc-good">${(r.disc*100).toFixed(0)}% below</span> ${trendChip(r.key)}
+        <span class="deal ${lab.cls}">${lab.txt}</span> <span class="disc-good">${(r.disc*100).toFixed(0)}% below</span>${edgeDiscChip(r.fmv, totalCost(r.item), r.item.player)} ${trendChip(r.key)}
         <div class="small">FMV $${r.fmv.toFixed(2)} (${r.src}) · range $${r.lo.toFixed(2)}–$${r.hi.toFixed(2)} · ${r.count} listed</div></td>
         <td>${tiltCell(r.tilt, r.fwd, r.fmv)}${driftCell(r.key, r.fmv, r.item.player)}</td>`);
     }).join("") + "</table>";
+}
+
+// dual-range discount band — re-renders stored strong rows within [min,max] (no re-scan)
+function onDiscFilter(which){
+  const minEl = document.getElementById("discMin");
+  const maxEl = document.getElementById("discMax");
+  let lo = +minEl.value, hi = +maxEl.value;
+  // prevent the handles from crossing (keep at least 1% apart)
+  if (lo > hi - 1){
+    if (which === "min"){ lo = hi - 1; minEl.value = lo; }
+    else { hi = lo + 1; maxEl.value = hi; }
+  }
+  const valEl = document.getElementById("discFilterVal");
+  if (valEl) valEl.textContent = `${lo}% – ${hi>=80?"80%+":hi+"%"}`;
+  if (window.lastStrongRows) renderStrong(window.lastStrongRows, 0);
+}
+
+function resetDiscFilter(){
+  const minEl = document.getElementById("discMin");
+  const maxEl = document.getElementById("discMax");
+  if (minEl) minEl.value = 10;
+  if (maxEl) maxEl.value = 80;
+  onDiscFilter("max");
 }
 
 function renderRadar(rows){
