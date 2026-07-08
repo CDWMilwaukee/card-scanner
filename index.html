@@ -554,6 +554,10 @@ function renderPortfolio(pf){
     </div>`;
   const rows = (pf.byPlayer || []).map(r => {
     const cv = convFor(r.player);
+    const prow = dbPlayers.find(x => (x.name||"").toLowerCase() === (r.player||"").toLowerCase());
+    const rankBadge = (prow && prow.prospect_rank != null)
+      ? `<span class="tiltbadge tilt-flat" title="Claude's independent Brewers prospect rank">#${prow.prospect_rank}</span>`
+      : `<span class="small" style="color:#aab">—</span>`;
     const convBadge = cv
       ? `<span class="tiltbadge ${cv.conviction >= 70 ? 'tilt-up' : cv.conviction >= 50 ? 'tilt-flat' : 'tilt-down'}" title="${esc(cv.notes||'')}">${cv.conviction}${cv.upside_room != null ? " / " + cv.upside_room : ""}</span>`
       : `<span class="small" style="color:#aab">—</span>`;
@@ -566,10 +570,11 @@ function renderPortfolio(pf){
       <td class="small">$${r.fmv_low ?? "—"} – $${r.fmv_high ?? "—"}</td>
       <td>${pmult}</td>
       <td>${convBadge}</td>
+      <td>${rankBadge}</td>
     </tr>`;
   }).join("");
   document.getElementById("portfolioTable").innerHTML =
-    `<table><tr><th>Player</th><th>#</th><th>Invested</th><th>FMV</th><th>Mult</th><th>Conviction / Upside</th></tr>${rows}</table>
+    `<table><tr><th>Player</th><th>#</th><th>Invested</th><th>FMV</th><th>Mult</th><th>Conviction / Upside</th><th>Rank</th></tr>${rows}</table>
      <div id="playerCards" style="margin-top:8px"></div>`;
 }
 function showPlayerCards(player){
