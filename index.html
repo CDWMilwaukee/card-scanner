@@ -592,11 +592,36 @@ function showPlayerCards(player){
     <td class="price">$${(+c.paid || 0).toFixed(2)}</td>
     <td class="small">${c.fmv_low != null ? `$${c.fmv_low} – $${c.fmv_high}` : '<i style="color:#b42318">needs FMV — ask Claude</i>'}</td>
     <td class="small">${esc(c.notes || "")}</td>
+    <td><button style="background:none;border:none;color:#b42318;font-size:15px;cursor:pointer;padding:2px" title="Delete this card" onclick="deleteCard(${c.id})">🗑</button></td>
   </tr>`).join("");
   document.getElementById("playerCards").innerHTML =
     `<div class="intel-card"><b>${esc(player)}</b> — ${list.length} card(s)
      <a href="#" class="small" onclick="document.getElementById('playerCards').innerHTML='';return false;" style="float:right">✕ close</a>
-     <table style="margin-top:6px"><tr><th>Card</th><th></th><th>Paid</th><th>FMV</th><th>Notes</th></tr>${rows}</table></div>`;
+     <table style="margin-top:6px"><tr><th>Card</th><th></th><th>Paid</th><th>FMV</th><th>Notes</th><th></th></tr>${rows}</table></div>`;
+}
+// PATCH 8/13/26: one-tap card delete with confirm — for cleaning up mistakes
+// (duplicate adds, misspelled players). Uses the Worker's /admin/cards delete.
+async function deleteCard(id){
+  const c = dbCards.find(x => x.id === id);
+  const label = c ? `${c.player} — ${c.card_name} ($${(+c.paid||0).toFixed(2)} paid)` : ("card #" + id);
+  if (!confirm("Delete this card from the database?\n\n" + label + "\n\nThis can't be undone.")) return;
+  const st = document.getElementById("dbStatus");
+  st.textContent = "Deleting…";
+  try {
+    const base = localStorage.getItem("cs_worker");
+    if (!base) throw new Error("Set your Worker URL in Setup first.");
+    const payload = encodeURIComponent(JSON.stringify([{ id: id, delete: 1 }]));
+    const resp = await fetch(base + "/admin/cards?payload=" + payload);
+    const data = await resp.json();
+    if (data.ok){
+      st.textContent = "🗑 Deleted.";
+      await loadPortfolio();
+      if (c && dbCards.filter(x => x.player === c.player).length) showPlayerCards(c.player);
+      else document.getElementById("playerCards").innerHTML = "";
+    } else {
+      st.textContent = "Delete failed: " + (data.error || "unknown");
+    }
+  } catch(e){ st.textContent = "Delete error: " + e.message; }
 }
 function populateTierSelect(){
   const sel = document.getElementById("acTier");
