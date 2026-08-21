@@ -200,6 +200,7 @@
       <button onclick="addPlayer()">Add</button>
       <button class="secondary" onclick="restoreDefaults()">↺ Restore Full Brewers List</button>
       <button class="secondary" onclick="syncRoster()">⟳ Sync 26-man from MLB</button>
+      <button class="secondary" onclick="syncPortfolio()">⇣ Sync from Portfolio</button>
     </div>
     <div id="watchlist"></div>
   </div>
@@ -1090,6 +1091,40 @@ async function syncRoster(){
     renderWatchlist();
     setStatus(`Roster synced — ${roster.length} players from MLB active roster.`);
   } catch(e){ alert("Sync error: " + e.message); }
+}
+
+// PATCH 8/21/26: Sync from Portfolio — heals watchlist/portfolio drift (the 8/20
+// audit found 25+ owned-card players invisible to the deal scanner). Additive
+// only: pulls every distinct player holding a card in the D1 book, plus every
+// ranked prospect tier A-D from the players table, and adds whoever is missing
+// to the Prospects group. Never removes chips, never touches Roster. Tier E/X
+// names you don't own stay manual adds so the scanner keeps focus. Owned
+// veterans/legends land in Prospects too (scanning is the point; drag the chip
+// if the grouping bothers you).
+async function syncPortfolio(){
+  try {
+    setStatus("Syncing from portfolio…");
+    const [cardsData, playersData] = await Promise.all([workerGet("/cards"), workerGet("/players")]);
+    const norm = s => (s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+    const have = new Set(watchlist.map(w => norm(w.player)));
+    const owned = new Map();
+    for (const c of (cardsData.cards || [])) {
+      if (c.player && !owned.has(norm(c.player))) owned.set(norm(c.player), c.player);
+    }
+    const ranked = new Map();
+    for (const p of (playersData.players || [])) {
+      const t = (p.tier || "").toUpperCase();
+      if (["A","B","C","D"].includes(t) && p.name && !ranked.has(norm(p.name))) ranked.set(norm(p.name), p.name);
+    }
+    let addedOwned = 0, addedRanked = 0;
+    for (const [k, name] of owned) if (!have.has(k)) { watchlist.push({ player: name, keywords: "", group: "Prospects" }); have.add(k); addedOwned++; }
+    for (const [k, name] of ranked) if (!have.has(k)) { watchlist.push({ player: name, keywords: "", group: "Prospects" }); have.add(k); addedRanked++; }
+    save("cs_watchlist", watchlist);
+    renderWatchlist();
+    setStatus(addedOwned + addedRanked
+      ? `Portfolio sync: +${addedOwned} owned-card players, +${addedRanked} ranked prospects added.`
+      : "Portfolio sync: watchlist already covers every owned + ranked player.");
+  } catch(e){ alert("Portfolio sync error: " + e.message); }
 }
 renderWatchlist();
 renderBrainPanel();
