@@ -220,6 +220,9 @@
       </select></label>
       <label>Min price $<input id="fMinPrice" type="number" value="2" style="width:60px; padding:4px" title="Filters out $0.99 base-common junk at the eBay level"></label>
       <label>Max price $<input id="fMaxPrice" type="number" value="250" style="width:70px; padding:4px"></label>
+      <label>Year <select id="fYear">
+        <option value="">All years</option><option>2026</option><option>2025</option><option>2024</option>
+      </select></label>
       <label>Type <select id="fBuying">
         <option value="ALL">All</option>
         <option value="FIXED_PRICE" selected>BIN / Best Offer</option>
@@ -312,11 +315,11 @@
 
   <!-- TRENDS -->
   <div class="panel">
-    <h2>🧠 Intel — live stats / Statcast → tilt suggestions (news handled in chat)</h2>
+    <h2>🧠 Intel — universe snapshots + live Statcast → tilt suggestions (news handled in chat)</h2>
     <div class="row" style="margin-bottom:8px">
       <button id="intelBtn" onclick="refreshIntel()">🔄 Refresh Intel</button>
       <button onclick="resetIntelOverrides()" style="background:#fff;border:1px solid #d0d5dd">🗑️ Reset intel overrides → use brain</button>
-      <span id="intelStatus" class="small">Pulls everything since your last refresh, then proposes tilt changes for your review.</span>
+      <span id="intelStatus" class="small">Reads the stored daily-cron universe (season line + last 7/15/30) in one call, plus live Statcast for MLB names, then proposes tilt changes for your review.</span>
     </div>
     <div id="intelPanel"><p class="small">No suggestions yet. Click “Refresh Intel” to pull the latest stats & Statcast.</p></div>
   </div>
@@ -663,9 +666,14 @@ async function addCardToDb(){
   } catch(e){ st.textContent = "Save error: " + e.message; }
 }
 
-/* ============ INTEL ENGINE (live stats / statcast / news -> tilt suggestions) ============ */
-/* Design: conservative nudges. One game / one headline = small (±0.02–0.05).
-   Sustained Statcast signal or hard news (injury/callup) = bigger. Always shows the data. */
+/* ============ INTEL ENGINE (universe snapshots + live Statcast -> tilt suggestions) ============ */
+/* Design: conservative nudges. One headline = small (±0.02–0.05).
+   Sustained Statcast signal or hard news (injury/callup) = bigger. Always shows the data.
+   PATCH 8/29/26 (universe-first): the refresh no longer makes live per-player /stats calls —
+   those blew the Worker's ~50-subrequest budget and silently blanked every player after the
+   first ~20 ("No data found" x45). It now reads the stored /universe snapshots (daily cron:
+   season line + last7/15/30 + level + snapshot date) in ONE call, plus one live /statcast
+   call per type (single CSV fetch regardless of name count, MLB players only). */
 
 function intelDateStr(d){ return new Date(d).toISOString().slice(0,10); }
 
@@ -715,6 +723,10 @@ function interpretPlayer(name, stats, statcast, newsItems){
   }
 
   // ---- RECENT GAME LOGS (small nudges; one game is not a trend) ----
+  // NOTE (8/29/26): universe snapshots don't store game logs, so recentGames arrives empty
+  // on refresh now — the 7/15/30 trend windows below carry the heat/cold signal instead.
+  // This block is kept intact so anything that still passes game logs (or a future
+  // snapshot upgrade) works unchanged.
   if (stats && stats.recentGames && stats.recentGames.length){
     const g = stats.recentGames;
     // pitchers
@@ -787,46 +799,40 @@ function interpretPlayer(name, stats, statcast, newsItems){
 }
 
 
-/* ---- orchestration: pull all sources since last pull, build suggestions ---- */
+/* ---- orchestration: read the stored universe + live Statcast, build suggestions ---- */
 let intelSuggestions = [];   // [{player, cur, suggested, delta, drivers[]}]
-let intelReviewed = { noData: [], noChange: [] };
+let intelReviewed = { noData: [], noChange: [], legends: [] };
+
+const LEGENDS = new Set(["ryan braun","robin yount","paul molitor","cecil cooper","rollie fingers","prince fielder","gorman thomas","jim gantner","don money"]);
+// ^ retired/legacy names: skipped by intel refresh (no current stats exist). Add lowercase names as needed.
 
 async function refreshIntel(){
   const btn = document.getElementById("intelBtn");
   const statusEl = document.getElementById("intelStatus");
   if (btn) btn.disabled = true;
   try {
-    const since = lastIntelPull ? intelDateStr(lastIntelPull) : intelDateStr(Date.now() - 7*86400000);
-    const todayStr2 = intelDateStr(Date.now());
-    statusEl.textContent = `Pulling stats & Statcast as of ${todayStr2} (game logs since ${since})…`;
+    const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
+    // in-session dedupe: the load-time filter runs once, but the sync buttons can re-add
+    // duplicates mid-session (Gasser/Drohan/May x2 in the 8/28 refresh). Enforce here too.
+    watchlist = watchlist.filter((w,i,arr)=> arr.findIndex(x=>norm(x.player)===norm(w.player))===i);
+    save("cs_watchlist", watchlist);
 
-    // players to evaluate = current watchlist
-    const names = watchlist.map(w => w.player);
+    statusEl.textContent = "Reading stored universe snapshots (1 call)…";
+    // UNIVERSE-FIRST (8/29/26): the daily cron already stored every player's season line +
+    // last7/15/30. One /universe read replaces dozens of live /stats calls.
+    const uni = await workerGet("/universe");
+    const uniByName = {};
+    for (const p of (uni.players||[])) uniByName[norm(p.name)] = p;
+
+    // Statcast stays LIVE — one CSV fetch per type regardless of name count (MLB players only).
+    const names = watchlist.map(w=>w.player);
     const namesParam = encodeURIComponent(names.join("|"));
-
-    // (news is no longer auto-pulled — it's done as a manual chat pass and baked into the brain)
-
-    // stats with game logs since last pull
-    let statsResp = { players: [] };
-    try { statsResp = await workerGet(`/stats?players=${namesParam}&since=${since}`); } catch(e){}
-
-    // 3) statcast — batters and pitchers separately (one call each, then match)
     let scBat = { players: [] }, scPit = { players: [] };
     try { scBat = await workerGet(`/statcast?players=${namesParam}&type=batter`); } catch(e){}
     try { scPit = await workerGet(`/statcast?players=${namesParam}&type=pitcher`); } catch(e){}
-
-    // index helpers
-    const statsByName = {};
-    for (const p of (statsResp.players||[])) if (p.found) statsByName[(p.query||"").toLowerCase()] = p;
     const scByName = {};
-    for (const p of (scBat.players||[])){
-      const nm = (p["last_name, first_name"]||"").toLowerCase(); // "last, first"
-      scByName[nm] = { ...p, __type: "batter" };
-    }
-    for (const p of (scPit.players||[])){
-      const nm = (p["last_name, first_name"]||"").toLowerCase();
-      scByName[nm] = { ...p, __type: "pitcher" };   // pitcher row wins if a name appears in both
-    }
+    for (const p of (scBat.players||[])){ scByName[(p["last_name, first_name"]||"").toLowerCase()] = { ...p, __type:"batter" }; }
+    for (const p of (scPit.players||[])){ scByName[(p["last_name, first_name"]||"").toLowerCase()] = { ...p, __type:"pitcher" }; }   // pitcher row wins if a name appears in both
     function matchStatcast(name){
       const parts = name.toLowerCase().split(/\s+/);
       for (const key in scByName){ if (parts.every(pp => key.includes(pp))) return scByName[key]; }
@@ -834,7 +840,7 @@ async function refreshIntel(){
     }
 
     intelSuggestions = [];
-    intelReviewed = { noData: [], noChange: [] };
+    intelReviewed = { noData: [], noChange: [], legends: [] };
     // find last names shared by 2+ watchlist players -> those need full-name matching
     const lastCounts = {};
     for (const w of watchlist){
@@ -843,13 +849,36 @@ async function refreshIntel(){
     }
     window.AMBIGUOUS_LASTNAMES = new Set(Object.keys(lastCounts).filter(k=>lastCounts[k]>1));
     window.ALL_WATCH_NAMES = watchlist.map(w=>w.player.toLowerCase());
+
+    const parseJ = s => { try { return s ? JSON.parse(s) : null; } catch(e){ return null; } };
+    let covered = 0;
     for (const w of watchlist){
       const nm = w.player;
-      const stats = statsByName[nm.toLowerCase()] || null;
+      if (LEGENDS.has(norm(nm))){ intelReviewed.legends.push(nm); continue; }
+      const u = uniByName[norm(nm)];
       const statcast = matchStatcast(nm);
+
+      // Build a stats shim from the stored snapshot so interpretPlayer runs unchanged.
+      // (recentGames intentionally empty — snapshots don't store game logs; trend windows cover it.)
+      let stats = null;
+      if (u && u.stat_date){
+        covered++;
+        const season = parseJ(u.stat_line) || {};
+        const l7 = parseJ(u.last7), l15 = parseJ(u.last15), l30 = parseJ(u.last30);
+        const kind = (l7 && l7.era != null) ? "pitching" : (l7 && l7.ops != null) ? "hitting" : null;
+        stats = { level: u.level || "MLB", season, recentGames: [],
+                  trend: kind ? { kind, last7:l7, last15:l15, last30:l30 } : null,
+                  __snapshotDate: u.stat_date };
+      }
+
       const { delta, drivers } = interpretPlayer(nm, stats, statcast, []);
+      if (stats || statcast){
+        drivers.push({ k:"src", dir:"0",
+          txt:`source: ${statcast ? "Statcast + universe" : "universe"}${stats && stats.__snapshotDate ? " · snapshot " + stats.__snapshotDate : ""}${stats && stats.level && stats.level!=="MLB" ? " · " + stats.level : ""}` });
+      }
+      const realDrivers = drivers.filter(d => d.k !== "src");
       const hadData = !!(stats || statcast);
-      if (!drivers.length){
+      if (!realDrivers.length){
         intelReviewed[hadData ? "noChange" : "noData"].push(nm);
         continue;
       }
@@ -871,7 +900,7 @@ async function refreshIntel(){
       }
 
       // only surface if there's a real change OR meaningful confirming data
-      if (Math.abs(suggested - cur) < 0.01 && !drivers.some(d=>d.dir!=="0")){
+      if (Math.abs(suggested - cur) < 0.01 && !realDrivers.some(d=>d.dir!=="0")){
         intelReviewed.noChange.push(nm);
         continue;
       }
@@ -883,7 +912,7 @@ async function refreshIntel(){
     lastIntelPull = new Date().toISOString();
     localStorage.setItem("cs_lastIntelPull", lastIntelPull);
     renderIntelPanel();
-    statusEl.textContent = `Done — ${intelSuggestions.length} player(s) with new intel. Last pull: ${new Date().toLocaleString()}`;
+    statusEl.textContent = `Done — ${intelSuggestions.length} suggestion(s) · universe coverage ${covered}/${watchlist.length - intelReviewed.legends.length} players · ${new Date().toLocaleString()}`;
   } catch(err){
     statusEl.textContent = "Intel error: " + err.message;
   } finally {
@@ -893,7 +922,7 @@ async function refreshIntel(){
 
 function driverChip(d){
   const cls = d.dir === "+" ? "tilt-up" : d.dir === "-" ? "tilt-down" : "tilt-flat";
-  const ic  = d.k === "statcast" ? "📊" : d.k === "news" ? "📰" : d.k === "game" ? "⚾" : d.k === "trend" ? "📈" : d.k === "drift" ? "🎯" : "•";
+  const ic  = d.k === "statcast" ? "📊" : d.k === "news" ? "📰" : d.k === "game" ? "⚾" : d.k === "trend" ? "📈" : d.k === "drift" ? "🎯" : d.k === "src" ? "🗄" : "•";
   return `<div class="drv ${cls}">${ic} ${esc(d.txt)}</div>`;
 }
 
@@ -901,7 +930,7 @@ function renderIntelPanel(){
   const el = document.getElementById("intelPanel");
   if (!el) return;
   if (!intelSuggestions.length){
-    el.innerHTML = `<p class="small">No suggestions yet. Click “Refresh Intel” to pull the latest stats & Statcast and see proposed tilt changes.</p>`;
+    el.innerHTML = `<p class="small">No suggestions yet. Click “Refresh Intel” to pull the latest stats & Statcast and see proposed tilt changes.</p>` + reviewedSummary();
     return;
   }
   el.innerHTML = intelSuggestions.map((s,i)=>{
@@ -958,10 +987,12 @@ function deltaBreakdown(s){
 function reviewedSummary(){
   const nc = (intelReviewed.noChange||[]);
   const nd = (intelReviewed.noData||[]);
-  if (!nc.length && !nd.length) return "";
+  const lg = (intelReviewed.legends||[]);
+  if (!nc.length && !nd.length && !lg.length) return "";
   let h = `<div class="reviewed">`;
   if (nc.length) h += `<details><summary>✓ Reviewed, no change needed (${nc.length})</summary><div class="small" style="margin-top:6px">${nc.map(esc).join(", ")}</div></details>`;
-  if (nd.length) h += `<details><summary>— No data found this pull (${nd.length})</summary><div class="small" style="margin-top:6px">Usually minor-league prospects not in MLB stats/Statcast yet, or no recent news: ${nd.map(esc).join(", ")}</div></details>`;
+  if (nd.length) h += `<details><summary>— No universe snapshot yet (${nd.length})</summary><div class="small" style="margin-top:6px">Not yet covered by the daily stat cron (new adds appear within ~6 days), or the name doesn't resolve to an MLB/MiLB player: ${nd.map(esc).join(", ")}</div></details>`;
+  if (lg.length) h += `<details><summary>🏛 Legends — skipped, no current stats (${lg.length})</summary><div class="small" style="margin-top:6px">${lg.map(esc).join(", ")}</div></details>`;
   h += `</div>`;
   return h;
 }
@@ -1084,8 +1115,13 @@ async function syncRoster(){
   try {
     const data = await workerGet("/roster");
     if (!data.players || !data.players.length){ alert("MLB roster came back empty — try again in a minute."); return; }
+    const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();
     const prospects = watchlist.filter(w => w.group !== "Roster");
-    const roster = data.players.map(p => ({ player: p.name, keywords: "", group: "Roster" }));
+    const prospectNames = new Set(prospects.map(w => norm(w.player)));
+    // don't re-add someone already tracked as a Prospect (dupes were leaking in here)
+    const roster = data.players
+      .filter(p => !prospectNames.has(norm(p.name)))
+      .map(p => ({ player: p.name, keywords: "", group: "Roster" }));
     watchlist = [...prospects, ...roster];
     save("cs_watchlist", watchlist);
     renderWatchlist();
@@ -1293,11 +1329,15 @@ async function scanAll(){
   lastItems = [];
   const groupSel = document.getElementById("scanGroup").value;
   const targets = groupSel === "ALL" ? watchlist : watchlist.filter(w => w.group === groupSel);
+  // YEAR FILTER (PATCH 8/29/26): optional single-year scan. The year is prepended to every
+  // eBay query AND enforced on the parsed title as a backstop (sellers bury the year mid-title;
+  // eBay keyword match alone lets other years leak through).
+  const fYear = (document.getElementById("fYear")||{}).value || "";
   try {
     for (let i = 0; i < targets.length; i++) {
       const w = targets[i];
       setStatus(`Scanning ${i+1}/${targets.length}: ${w.player}…`);
-      const baseQ = [w.player, w.keywords].filter(Boolean).join(" ");   // player (+ optional keywords)
+      const baseQ = [fYear, w.player, w.keywords].filter(Boolean).join(" ");   // year (optional) + player + keywords
       try {
         // Two passes so a flood of $0.99 base commons can't eat the 200-listing budget:
         // pass 1 = autos, pass 2 = numbered parallels (refractor/numbered). Merge & de-dupe.
@@ -1325,7 +1365,9 @@ async function scanAll(){
           // require the player's last name in the title to cut noise
           const lastName = w.player.trim().split(/\s+/).slice(-1)[0].toLowerCase();
           if (!it.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").includes(lastName.normalize("NFD").replace(/[\u0300-\u036f]/g,""))) continue;
-          lastItems.push({ ...it, player: w.player, parsed: parseTitle(it.title) });
+          const parsed = parseTitle(it.title);
+          if (fYear && parsed.year !== +fYear) continue;   // year filter backstop: parsed title year must match
+          lastItems.push({ ...it, player: w.player, parsed });
         }
       } catch(e) { console.warn("scan error", w.player, e); }
       await new Promise(r => setTimeout(r, 250)); // be polite to rate limits
@@ -1333,7 +1375,7 @@ async function scanAll(){
     document.getElementById("lastScan").textContent =
       "Last scan: " + new Date().toLocaleTimeString();
     processResults(true);
-    setStatus(`Done — ${lastItems.length} listings pulled across ${targets.length} players.`);
+    setStatus(`Done — ${lastItems.length} listings pulled across ${targets.length} players.${fYear ? " (Year filter: " + fYear + " only.)" : ""}`);
   } finally { btn.disabled = false; }
 }
 
@@ -1693,15 +1735,23 @@ async function cardCheck(){
 }
 
 async function scanOneOff(){
-  const q = document.getElementById("oneOff").value.trim();
+  let q = document.getElementById("oneOff").value.trim();
   if (!q) return;
+  // YEAR FILTER (PATCH 8/29/26): honor the Year dropdown on one-off searches too —
+  // prepend it to the query (unless already typed) and enforce it on parsed titles.
+  const fYear = (document.getElementById("fYear")||{}).value || "";
+  if (fYear && !q.includes(fYear)) q = fYear + " " + q;
   setStatus(`Searching: ${q}…`);
   lastItems = [];
   const items = await fetchListings(q);
-  const player = q.split(/\s+/).slice(0,2).join(" ");
-  for (const it of items) lastItems.push({ ...it, player, parsed: parseTitle(it.title) });
+  const player = document.getElementById("oneOff").value.trim().split(/\s+/).slice(0,2).join(" ");
+  for (const it of items){
+    const parsed = parseTitle(it.title);
+    if (fYear && parsed.year !== +fYear) continue;
+    lastItems.push({ ...it, player, parsed });
+  }
   processResults(true);
-  setStatus(`Done — ${lastItems.length} listings.`);
+  setStatus(`Done — ${lastItems.length} listings.${fYear ? " (Year filter: " + fYear + " only.)" : ""}`);
 }
 
 /* ============ ANALYSIS ============ */
@@ -1980,463 +2030,286 @@ function clearHistory(){
   history = {}; save("cs_history", history); renderTrends();
 }
 
-function processResults(record=false){
-  const all = applyFilters(lastItems);
-  const items = all.filter(it => it.parsed.product);      // LICENSED / recognized products only
-  const hidden = all.length - items.length;               // unlicensed (Leaf/Panini/IP) dropped
+/* ============ SCARCITY ARBITRAGE ============ */
+// Market prices rarity on a dampened curve, not linearly: a /50 is 3x scarcer than a /150 but
+// trades ~1.7x, not 3x. Parity model: fair(scarcer) = anchor.med * (anchorPR/targetPR)^EXP.
+// A scarcer card priced below that curve is genuinely mispriced vs its own family.
+const SCARCITY_EXP = 0.65;          // dampening exponent (empirical hobby-wide; tune with data)
+const SCARCITY_PARITY_GUARD = 0.75; // extra guard: target low must ALSO sit below anchor med x this
+const UNNUM_AS = 800;               // treat unnumbered autos as /800 for the curve
+function parityMultiple(anchorPR, targetPR){
+  return Math.pow(anchorPR / targetPR, SCARCITY_EXP);
+}
+// per-tier stats within one family silo
+function tierStat(list){
+  const priced = list.filter(x=>x.price!=null);
+  if (!priced.length) return null;
+  const costs = priced.map(totalCost);
+  const med = median(costs);
+  const lowIt = priced.reduce((a,b)=> totalCost(a)<=totalCost(b)?a:b);
+  return { med, low: totalCost(lowIt), lowIt, n: priced.length };
+}
+let arbCache = [];   // computed rows, re-filterable without a rescan
+function renderScarcityArb(filtered){
+  // ---- build family silos: player | year | product | auto-status ----
+  const fams = {};
+  for (const it of filtered){
+    const p = it.parsed;
+    if (!p.product || !p.year) continue;
+    if (p.graded) continue;                                  // raw-to-raw comps only
+    const pr = p.printRun || (p.auto ? UNNUM_AS : null);
+    if (!pr) continue;                                       // unnumbered non-autos aren't a tier
+    const famKey = [it.player.toLowerCase(), p.year, p.product, p.auto?"auto":"noauto"].join(" | ");
+    const tierKey = p.printRun ? ""+p.printRun : "unnum";
+    ((fams[famKey] = fams[famKey] || {})[tierKey] = fams[famKey][tierKey] || []).push(it);
+  }
+  // ---- walk each family: every (looser anchor, scarcer target) pair ----
+  arbCache = [];
+  for (const [famKey, tiers] of Object.entries(fams)){
+    const keys = Object.keys(tiers);
+    if (keys.length < 2) continue;
+    const [player, year, product, autoTag] = famKey.split(" | ");
+    const numOf = k => k==="unnum" ? UNNUM_AS : +k;
+    // anchors need a real median (2+ listings). targets can be single listings (the deal itself).
+    for (const aK of keys){
+      const aPR = numOf(aK);
+      const aStat = tierStat(tiers[aK]);
+      if (!aStat || aStat.n < 2) continue;
+      for (const tK of keys){
+        const tPR = numOf(tK);
+        if (tPR >= aPR) continue;                            // target must be scarcer
+        const tStat = tierStat(tiers[tK]);
+        if (!tStat) continue;
+        const fair = aStat.med * parityMultiple(aPR, tPR);   // dampened-curve fair value
+        const guard = aStat.med * SCARCITY_PARITY_GUARD;
+        // the deal: scarcer card's LOW below both the curve fair value and the guard
+        if (tStat.low < fair && tStat.low < guard){
+          const disc = 1 - tStat.low / fair;
+          arbCache.push({
+            player: tiers[tK][0].player, year, product, auto: autoTag==="auto",
+            anchorPR: aPR, anchorMed: aStat.med, anchorN: aStat.n, anchorLabel: aK==="unnum"?"unnum":"/"+aK,
+            targetPR: tPR, targetLabel: tK==="unnum"?"unnum":"/"+tK,
+            low: tStat.low, lowIt: tStat.lowIt, fair, disc,
+          });
+        }
+      }
+    }
+  }
+  // keep each target listing's BEST pairing only (deepest legit discount), then sort
+  const seen = new Map();
+  for (const r of arbCache){
+    const id = r.lowIt.id || (r.player+r.targetLabel+r.low);
+    if (!seen.has(id) || seen.get(id).disc < r.disc) seen.set(id, r);
+  }
+  arbCache = [...seen.values()].sort((a,b)=> b.disc - a.disc);
+  // populate the player filter
+  const sel = document.getElementById("arbPlayer");
+  if (sel){
+    const cur = sel.value;
+    const names = [...new Set(arbCache.map(r=>r.player))].sort();
+    sel.innerHTML = `<option value="ALL">All players</option>` + names.map(n=>`<option>${esc(n)}</option>`).join("");
+    if ([...sel.options].some(o=>o.value===cur)) sel.value = cur;
+  }
+  document.getElementById("arbControls").style.display = arbCache.length ? "flex" : "none";
+  renderArbFromCache();
+}
+function renderArbFromCache(){
+  const el = document.getElementById("scarcityArbResults");
+  const minDiscEl = document.getElementById("arbMinDisc");
+  const minDisc = (minDiscEl ? +minDiscEl.value : 1) / 100;
+  const vEl = document.getElementById("arbMinDiscVal");
+  if (vEl) vEl.textContent = Math.round(minDisc*100) + "%";
+  const pSel = document.getElementById("arbPlayer");
+  const aSel = document.getElementById("arbAnchor");
+  const tSel = document.getElementById("arbTarget");
+  const pWant = pSel ? pSel.value : "ALL";
+  const aWant = aSel ? aSel.value : "ANY";
+  const tWant = tSel ? tSel.value : "ANY";
+  let rows = arbCache.filter(r => r.disc >= minDisc);
+  if (pWant !== "ALL") rows = rows.filter(r => r.player === pWant);
+  if (aWant !== "ANY") rows = rows.filter(r => ""+r.anchorPR === aWant);
+  if (tWant !== "ANY") rows = rows.filter(r => ""+r.targetPR === tWant);
+  if (!rows.length){
+    el.innerHTML = `<p class="small">No scarcity mispricings match the current filters. Loosen the filters or re-scan.</p>`;
+    return;
+  }
+  el.innerHTML = `<table>
+    <tr><th>Deal</th><th>Card (scarcer target)</th><th>Target low</th><th>Curve fair</th><th>Anchor (looser tier)</th><th>Player intel</th></tr>` +
+    rows.slice(0, 60).map(r=>{
+      const d = dealLabel(r.disc);
+      return `<tr>
+        <td><span class="deal ${d.cls}">${Math.round(r.disc*100)}% under curve</span></td>
+        <td>
+          <a href="${r.lowIt.url}" target="_blank">${esc(r.lowIt.title)}</a>
+          <div class="small">${r.year} ${esc(r.product)} ${r.auto?"auto":""} <b>${r.targetLabel}</b> vs anchor ${r.anchorLabel}</div>
+        </td>
+        <td class="price">$${r.low.toFixed(2)}</td>
+        <td class="price">$${r.fair.toFixed(2)}</td>
+        <td class="small">${r.anchorLabel} med $${r.anchorMed.toFixed(2)} (${r.anchorN} listings)</td>
+        <td>${intelLine(r.player)}</td>
+      </tr>`;
+    }).join("") + `</table>` +
+    (rows.length > 60 ? `<p class="small">Showing top 60 of ${rows.length}.</p>` : "");
+}
 
-
+/* ============ RESULTS PROCESSING ============ */
+function processResults(recordHist){
+  const filtered = applyFilters(lastItems);
   // group by exact card identity
   const groups = {};
-  for (const it of items) {
+  for (const it of filtered){
     const key = cardKey(it.player, it.parsed);
     (groups[key] = groups[key] || []).push(it);
   }
-
-  if (record) recordHistory(groups);                      // save dated medians (scans only, not FMV edits)
-
-  const strong = [], radar = [];
-  for (const [key, list] of Object.entries(groups)) {
-    const sorted = [...list].sort((a,b)=>totalCost(a)-totalCost(b));
-    const cheapest = sorted[0];
-    const lo = totalCost(sorted[0]), hi = totalCost(sorted[sorted.length-1]);
+  if (recordHist) { recordHistory(groups); renderTrends(); }
+  renderStrong(groups, filtered);
+  renderScarcityArb(filtered);
+  renderRadar(groups);
+  renderFmvTable(groups);
+}
+let strongCache = { groups:null };
+function renderStrong(groups, filtered){
+  strongCache.groups = groups;
+  onDiscFilter();
+}
+function onDiscFilter(which){
+  const groups = strongCache.groups;
+  if (!groups) return;
+  const minEl = document.getElementById("discMin"), maxEl = document.getElementById("discMax");
+  let lo = +minEl.value, hi = +maxEl.value;
+  if (lo > hi){ if (which==="min") maxEl.value = lo; else minEl.value = hi; lo = +minEl.value; hi = +maxEl.value; }
+  document.getElementById("discFilterVal").textContent = `${lo}% – ${hi}${hi>=80?"%+" : "%"}`;
+  const rows = [];
+  for (const [key, list] of Object.entries(groups)){
     const { fmv, src } = fmvFor(key, list);
-    if (fmv) {
-      const disc = (fmv - totalCost(cheapest)) / fmv;     // PURE: cheapest vs the MARKET (median). Tilt does NOT touch this.
-      const tilt = tiltFor(cheapest.player);             // forward conviction (0.5-1.5)
-      const fwd  = fmv * tilt;                            // 12-mo forward value off market FMV
-      // 2-axis rank: discount today (value) + forward conviction (growth). Both upsides float to top.
-      // disc can be negative (over market); (tilt-1) is the growth tilt above/below neutral.
-      const score = disc + 0.5 * (tilt - 1);
-      const fmvAdj = fmv * effectiveTilt(cheapest.player);
-      const discAdj = fmvAdj ? (fmvAdj - totalCost(cheapest))/fmvAdj : null;
-      const row = { key, item: cheapest, fmv, src, disc, tilt, fwd, discAdj, score, count: list.length, lo, hi };
-      if (disc >= 0.10 && totalCost(cheapest) >= 3) strong.push(row);   // a real below-market buy
-      else if (disc >= -0.08) radar.push(row);                          // fairly priced — visibility only
-    } else {
-      const tilt = tiltFor(cheapest.player);
-      radar.push({ key, item: cheapest, fmv:null, src:null, disc:null, tilt, fwd:null, score:0.5*(tilt-1), count:list.length, lo, hi, thin:true });
+    if (fmv == null) continue;
+    const best = list.reduce((a,b)=> totalCost(a) <= totalCost(b) ? a : b);
+    const cost = totalCost(best);
+    const disc = (fmv - cost) / fmv;
+    const discPct = disc*100;
+    if (discPct < lo || (hi < 80 && discPct > hi)) continue;
+    if (disc < 0.10) continue;
+    rows.push({ key, list, fmv, src, best, cost, disc });
+  }
+  rows.sort((a,b)=> (b.disc * tierWeight(b.best.player)) - (a.disc * tierWeight(a.best.player)));
+  const el = document.getElementById("arbResults");
+  document.getElementById("discFilterWrap").style.display = Object.keys(groups).length ? "flex" : "none";
+  document.getElementById("discFilterCount").textContent = rows.length ? `${rows.length} deal(s) in band` : "";
+  if (!rows.length){ el.innerHTML = `<p class="small">No listings in this discount band. Widen the band or re-scan.</p>`; return; }
+  el.innerHTML = `<table>
+    <tr><th>Deal</th><th>Card</th><th>Best price</th><th>Market (FMV)</th><th>12-mo fwd</th><th>Seller</th><th>Player intel</th></tr>` +
+    rows.map(r=>{
+      const d = dealLabel(r.disc);
+      const fwd = forwardValue(r.fmv, r.best.player);
+      const drift = askDrift(r.key, r.fmv);
+      const dv = drift ? driftVsTilt(r.best.player, drift) : null;
+      return `<tr>
+        <td><span class="deal ${d.cls}">${Math.round(r.disc*100)}% off</span><br>${trendChip(r.key)}</td>
+        <td>
+          <a href="${r.best.url}" target="_blank">${esc(r.best.title)}</a>
+          <div class="small">${r.list.length} listing(s) of this card ${tagRow(r.best.parsed)}</div>
+          ${dv ? `<div class="driftbadge ${dv.cls}" title="90d median ask $${dv.drift.hist90} → today $${dv.drift.cur} (${dv.drift.n} snapshots). Absorption = drift / tilt-implied move.">${esc(dv.verdict)}</div>` : ""}
+        </td>
+        <td class="price">$${r.cost.toFixed(2)}${r.best.shipping ? `<div class="small">incl $${r.best.shipping.toFixed(2)} ship</div>`:""}</td>
+        <td class="price">$${r.fmv.toFixed(2)}<div class="small">${r.src === "yours" ? "your FMV" : "market med"}</div>${edgeDiscChip(r.fmv, r.cost, r.best.player)}</td>
+        <td class="price">${fwd!=null ? "$"+fwd.toFixed(2) : "—"}<div class="small">tilt ${tiltFor(r.best.player).toFixed(2)}x</div></td>
+        <td class="small">${esc(r.best.seller || "")}<br>${r.best.feedbackPct ? r.best.feedbackPct+"%" : ""}</td>
+        <td>${intelLine(r.best.player)}</td>
+      </tr>`;
+    }).join("") + `</table>`;
+}
+function resetDiscFilter(){
+  document.getElementById("discMin").value = 10;
+  document.getElementById("discMax").value = 80;
+  onDiscFilter();
+}
+function renderRadar(groups){
+  const rows = [];
+  for (const [key, list] of Object.entries(groups)){
+    const { fmv, src } = fmvFor(key, list);
+    const best = list.reduce((a,b)=> totalCost(a) <= totalCost(b) ? a : b);
+    const cost = totalCost(best);
+    const t = tiltFor(best.player);
+    if (fmv != null){
+      const disc = (fmv - cost)/fmv;
+      // fairly-priced (not a steal) but HIGH-tilt player = watch it
+      if (disc >= -0.05 && disc < 0.10 && t >= 1.2) rows.push({ key, list, best, cost, fmv, src, why: "high-conviction player at market price" });
+    } else if (list.length < 3 && (best.parsed.auto || best.parsed.printRun)){
+      rows.push({ key, list, best, cost, fmv: null, src: null, why: "thin market — set a manual FMV" });
     }
   }
-  // Sort STRONG BUYS by pure discount, highest first (you want the deepest deals at the top).
-  // Tilt is a secondary tiebreaker only, so equal-discount cards order by forward conviction.
-  strong.sort((a,b)=> (b.disc - a.disc) || (tiltFor(b.item.player) - tiltFor(a.item.player)));
-  radar.sort((a,b)=> tiltFor(b.item.player) - tiltFor(a.item.player));
-
-  window.lastStrongRows = strong;   // keep for the live discount filter
-  renderStrong(strong, hidden);
-  renderRadar(radar);
-  renderFmvTable(groups);
-  renderTrends();
-  // Scarcity arbitrage runs on the FULL licensed scan — NOT the display-filtered subset.
-  // The scan's max-print / chrome-only / numbered-only filters shape the Strong Buys view, but they
-  // must NOT limit what can serve as a scarcity anchor or target (e.g. a /499 anchor would vanish
-  // under a /150 max-print setting, deleting valid comparisons before they're ever made).
-  const arbItems = lastItems.filter(it => {
-    const p = it.parsed;
-    return p.product && !p.lot && !p.digital && !p.ip && !p.oddSize && it.price != null && !isPureAuction(it);
-  });
-  renderScarcityArb(arbItems);   // cross-tier scarcity-parity arbitrage (additive, full dataset)
-  // always tell the user the funnel result so "empty" is explained, not mysterious
-  const idCount = Object.keys(groups).length;
-  setStatus(`${lastItems.length} listings → ${items.length} licensed → ${idCount} card identities · ${strong.length} below-market, ${radar.length} on radar. ${strong.length+radar.length===0 ? "Loosen filters (uncheck Numbered-only, raise max price) to see more." : ""}`);
+  rows.sort((a,b)=> tierWeight(b.best.player) - tierWeight(a.best.player));
+  const el = document.getElementById("fmvResults");
+  if (!rows.length){ el.innerHTML = `<p class="small">Nothing on the radar this scan.</p>`; return; }
+  el.innerHTML = `<table>
+    <tr><th>Why</th><th>Card</th><th>Best price</th><th>FMV</th><th>Set FMV</th><th>Player intel</th></tr>` +
+    rows.slice(0,40).map(r=>`<tr>
+      <td class="small">${r.why}</td>
+      <td><a href="${r.best.url}" target="_blank">${esc(r.best.title)}</a>
+        <div class="small">${r.list.length} listing(s) ${tagRow(r.best.parsed)} ${trendChip(r.key)}</div></td>
+      <td class="price">$${r.cost.toFixed(2)}</td>
+      <td class="price">${r.fmv!=null ? "$"+r.fmv.toFixed(2) : "—"}</td>
+      <td><input class="fmv-input" type="number" placeholder="$" value="${fmvBook[r.key]||""}"
+           onchange="setFmv('${r.key.replace(/'/g,"\\'")}', this.value)"></td>
+      <td>${intelLine(r.best.player)}</td>
+    </tr>`).join("") + `</table>` +
+    (rows.length>40 ? `<p class="small">Showing top 40 of ${rows.length}.</p>` : "");
+}
+function renderFmvTable(groups){
+  const el = document.getElementById("fmvTable");
+  const keys = Object.keys(groups).sort();
+  if (!keys.length){ el.innerHTML = `<p class="small">Run a scan first.</p>`; return; }
+  el.innerHTML = `<table>
+    <tr><th>Card identity</th><th>Listings</th><th>Market median</th><th>Your FMV</th></tr>` +
+    keys.map(k=>{
+      const list = groups[k];
+      const med = list.length>=2 ? median(list.map(totalCost)) : null;
+      return `<tr>
+        <td class="small">${esc(k)} ${trendChip(k)}</td>
+        <td>${list.length}</td>
+        <td>${med!=null ? "$"+med.toFixed(2) : "—"}</td>
+        <td><input class="fmv-input" type="number" placeholder="$" value="${fmvBook[k]||""}"
+             onchange="setFmv('${k.replace(/'/g,"\\'")}', this.value)"></td>
+      </tr>`;
+    }).join("") + `</table>`;
+}
+function setFmv(key, val){
+  const v = parseFloat(val);
+  if (isNaN(v) || v <= 0) delete fmvBook[key];
+  else fmvBook[key] = v;
+  save("cs_fmv", fmvBook);
+  processResults(false);
 }
 
-/* ============ RENDER ============ */
+/* ============ MISC ============ */
 function tagRow(p){
   let h = "";
   if (p.auto) h += `<span class="tag auto">AUTO</span>`;
   if (p.printRun) h += `<span class="tag num">/${p.printRun}</span>`;
   if (p.graded) h += `<span class="tag graded">${p.graded}</span>`;
+  if (p.parallel) h += `<span class="tag arb">${esc(p.parallel)}</span>`;
   return h;
 }
-function itemRow(it, extra=""){
-  const auction = it.buyingOptions.includes("AUCTION");
-  return `<tr>
-    <td>${it.image?`<img src="${it.image}" width="44" style="border-radius:4px">`:""}</td>
-    <td>${tagRow(it.parsed)}<a href="${it.url}" target="_blank">${esc(it.title)}</a>
-        ${auction?`<span class="tag auct">AUCTION${it.bidCount!=null?" · "+it.bidCount+" bids":""}</span>`:""}
-        <div class="small">${esc(it.parsed.product||"")} ${esc(it.parsed.parallel||"")}</div>
-        ${intelLine(it.player)}</td>
-    <td class="price">$${totalCost(it).toFixed(2)}<div class="small">${it.shipping?`$${it.price.toFixed(2)} item + $${it.shipping.toFixed(2)} ship`:"free ship"}</div></td>
-    ${extra}
-    <td class="small">${esc(it.seller||"")}${it.feedbackPct?` · ${it.feedbackPct}%`:""}</td>
-  </tr>`;
-}
-
-/* tilt cell: shows the forward-conviction multiplier, the 12-mo forward value, and implied upside */
-function tiltCell(tilt, fwd, fmv){
-  if (tilt == null) tilt = 1.0;
-  const up = tilt > 1.02, down = tilt < 0.98;
-  const cls = up ? "tilt-up" : down ? "tilt-down" : "tilt-flat";
-  const arrow = up ? "▲" : down ? "▼" : "→";
-  const pct = Math.round((tilt - 1) * 100);
-  const pctTxt = pct > 0 ? `+${pct}%` : `${pct}%`;
-  let fwdTxt = "";
-  if (fwd != null && fmv != null){
-    fwdTxt = `<div class="small">$${fmv.toFixed(0)} → <b>$${fwd.toFixed(0)}</b> <span class="${cls}">${pctTxt}</span></div>`;
-  } else {
-    fwdTxt = `<div class="small">set FMV for fwd value</div>`;
-  }
-  return `<span class="tiltbadge ${cls}">${arrow} ${tilt.toFixed(2)}x</span>${fwdTxt}`;
-}
-
-/* small drift readout: shows 90-day ask-history vs today, and the edge verdict */
-/* For a player, scan all their tracked cards for a "discount edge spent" drift signal.
-   Returns the strongest re-anchor recommendation, or null. Player-level (cards aggregated). */
+// ASK-DRIFT re-anchor helper for the intel engine: find this player's tracked cards with
+// history, compute drift on each, return the strongest "edge spent" signal (if any).
 function playerReanchor(player){
-  const plo = player.toLowerCase();
+  const k = (player||"").toLowerCase().trim();
   let best = null;
   for (const key in history){
-    if (!key.toLowerCase().startsWith(plo)) continue;   // cards are keyed "player | ..."
-    const h = history[key]; if (!h || !h.length) continue;
-    const curMed = h[h.length-1].med;
-    const d = askDrift(key, curMed);
-    if (!d) continue;
-    const v = driftVsTilt(player, d);
-    if (v && v.suggestReanchor && v.suggestedTilt != null){
-      // keep the one with the most absorption (strongest signal)
-      if (!best || v.absorbed > best.absorbed) best = { ...v, key };
+    if (!key.startsWith(k + " |")) continue;
+    const h = history[key];
+    if (!h || h.length < 2) continue;
+    const cur = h[h.length-1];
+    const drift = askDrift(key, cur.med);
+    if (!drift) continue;
+    const dv = driftVsTilt(player, drift);
+    if (dv && dv.suggestReanchor){
+      if (!best || dv.absorbed > best.absorbed) best = dv;
     }
   }
   return best;
 }
-
-function driftCell(key, currentMedian, player){
-  const d = askDrift(key, currentMedian);
-  if (!d) return `<div class="small drift-none">no ask history yet</div>`;
-  const v = driftVsTilt(player, d);
-  const pct = Math.round((d.driftMult - 1) * 100);
-  const pctTxt = (pct > 0 ? "+" : "") + pct + "%";
-  const arrow = d.driftMult > 1.02 ? "▲" : d.driftMult < 0.98 ? "▼" : "→";
-  const cls = v ? v.cls : "drift-flat";
-  let line = `<span class="driftbadge ${cls}">${arrow} ask ${pctTxt} vs 90d</span>`;
-  line += `<div class="small">90d median $${d.hist90} → now $${d.cur}</div>`;
-  if (v && v.verdict && v.tilt > 1.02){
-    line += `<div class="small ${cls}">${v.verdict}</div>`;
-  }
-  return line;
-}
-
-// ===== CROSS-TIER SCARCITY ARBITRAGE =====
-// Within one silo (same player + year + product + auto-status), a scarcer card should cost MORE
-// in proportion to its rarity — but the market prices rarity on a DAMPENED curve, not linearly.
-// We model it as parity multiple = (looser_run / scarcer_run) ^ SCARCITY_EXP.
-//   EXP = 1.0 is linear (over-predicts the scarce end), 0.5 is √ (too cold, finds few deals),
-//   0.65 is the current setting — flatter at the commodity end, steeper toward chase cards.
-//   Flag a scarcer card when its lowest price is >minDisc% below that parity (median-anchored).
-// Unnumbered autos treated as /1000 supply. Each tier needs 2+ listings to anchor.
-const SCARCITY_PARITY_GUARD = 0.75;   // legacy constant (the live minDisc slider is the real bar)
-const UNNUM_AS = 800;                  // unnumbered AUTO treated as ~/800 supply — a GUESS; flags resting on it are labeled
-const SCARCITY_EXP = 0.65;             // price scales with rarity^EXP. 1.0=linear(hot), 0.5=√(cold), 0.65=current. One knob to tune.
-function parityMultiple(looserRun, scarcerRun){ return Math.pow(looserRun / scarcerRun, SCARCITY_EXP); }
-
-// Cache silos from the scan so the dropdowns can re-query without re-scanning.
-window.arbSilos = null;
-window.arbItems = null;
-
-function renderScarcityArb(items){
-  window.arbItems = items;
-  // build silos: key = player | year | product | auto. Store per-tier listing arrays.
-  const silos = {};
-  for (const it of items){
-    const p = it.parsed;
-    if (!p.product || it.price == null) continue;
-    if (p.lot || p.digital || p.ip || p.oddSize || p.graded) continue;   // arb is RAW-to-RAW; graded distorts tier medians
-    let run = p.printRun;
-    if (!run){ if (p.auto) run = UNNUM_AS; else continue; }
-    const key = [it.player, p.year||"?", p.product, p.auto?"auto":"base"].join(" | ");
-    const silo = silos[key] = silos[key] || { player: it.player, tiers: {} };
-    (silo.tiers[run] = silo.tiers[run] || []).push({ run, cost: totalCost(it), url: it.url, title: it.title, auto:p.auto });
-  }
-  window.arbSilos = silos;
-  // populate the player dropdown from silos
-  const players = [...new Set(Object.values(silos).map(s=>s.player))].sort();
-  const psel = document.getElementById("arbPlayer");
-  if (psel){
-    const cur = psel.value;
-    psel.innerHTML = '<option value="ALL">All players</option>' + players.map(p=>`<option value="${esc(p)}">${esc(p)}</option>`).join("");
-    if (players.includes(cur) || cur==="ALL") psel.value = cur;
-  }
-  const ctl = document.getElementById("arbControls");
-  if (ctl) ctl.style.display = Object.keys(silos).length ? "flex" : "none";
-  renderArbFromCache();
-}
-
-const medOf = (arr)=>{ const a=arr.slice().sort((x,y)=>x-y); const m=Math.floor(a.length/2); return a.length?(a.length%2?a[m]:(a[m-1]+a[m])/2):null; };
-const lowestOf = (arr)=> arr.slice().sort((a,b)=>a.cost-b.cost)[0];
-
-// tier summary (median + cheapest), requires 2+ listings to trust the median
-function tierStat(arr){
-  // allow single-listing anchors so thin ladders still form. ANY-mode keeps the HARDEST
-  // comparison, so a lone over-priced anchor can't manufacture a flag; thin anchors are tagged.
-  if (!arr || arr.length < 1) return null;
-  return { low: lowestOf(arr).cost, lowObj: lowestOf(arr), med: medOf(arr.map(x=>x.cost)), n: arr.length };
-}
-
-function renderArbFromCache(){
-  const el = document.getElementById("scarcityArbResults");
-  if (!el || !window.arbSilos) return;
-  const silos = window.arbSilos;
-  const playerSel = (document.getElementById("arbPlayer")||{}).value || "ALL";
-  const anchorSel = (document.getElementById("arbAnchor")||{}).value || "ANY";
-  const targetSel = (document.getElementById("arbTarget")||{}).value || "ANY";
-  const minDisc = +((document.getElementById("arbMinDisc")||{}).value || 15);
-  const mdv = document.getElementById("arbMinDiscVal"); if (mdv) mdv.textContent = minDisc + "%";
-
-  const flags = [];
-  for (const [key, silo] of Object.entries(silos)){
-    if (playerSel !== "ALL" && silo.player !== playerSel) continue;
-    const tiers = silo.tiers;
-    // available tier runs sorted scarce→loose
-    const runs = Object.keys(tiers).map(Number).sort((a,b)=>a-b);
-    // pick TARGET (scarcer) tiers to evaluate
-    const targetRuns = targetSel === "ANY" ? runs.slice() : (tiers[+targetSel] ? [+targetSel] : []);
-    for (const tRun of targetRuns){
-      const tStat = tiers[tRun] ? { low: lowestOf(tiers[tRun]).cost, lowObj: lowestOf(tiers[tRun]), med: medOf(tiers[tRun].map(x=>x.cost)), n: tiers[tRun].length } : null;
-      if (!tStat) continue;   // target needs to exist (its own price is what we judge)
-
-      // ----- UNNUMBERED AUTO as the deal candidate (your Chourio case) -----
-      // An unnumbered auto has nothing LOOSER to anchor against, so judge it DOWNWARD vs its
-      // SCARCER numbered siblings: a scarcer card should cost MORE, so the unnum's parity =
-      // scarcer_median / parityMultiple(unnum, scarcer). Flag only if it sits below parity vs
-      // EVERY scarcer numbered tier (strict). Only in ANY-anchor mode; tagged unnumTarget since
-      // it leans on the ~/800 supply guess. Silo is already auto-typed, so this is always a true auto.
-      if (tRun === UNNUM_AS){
-        if (anchorSel !== "ANY") continue;             // only in ANY mode; can't anchor an unnum upward
-        let worst = null;
-        for (const r of runs){
-          if (r >= UNNUM_AS) continue;                 // numbered (scarcer) tiers only
-          const st = tierStat(tiers[r]); if (!st) continue;
-          const pm = parityMultiple(UNNUM_AS, r);      // multiple the scarcer commands over the unnum
-          const pp = st.med / pm;                       // unnum parity implied by this scarcer tier
-          const pct = Math.round((1 - tStat.low/pp) * 100);
-          if (worst === null || pct < worst.pct) worst = { run:r, st, pm, pp, pct };
-        }
-        if (!worst || worst.pct < minDisc) continue;   // no scarcer numbered depth, or not cheap enough
-        flags.push({
-          player: silo.player, key, tRun, tStat,
-          anchorRun: worst.run, anchorStat: worst.st, substituted:false,
-          scarcityRatio: UNNUM_AS / worst.run, parityMult: worst.pm,
-          parityPrice: worst.pp, pctBelow: worst.pct,
-          looserOwnDisc: worst.st.med ? Math.round((1 - worst.st.low/worst.st.med)*100) : 0,
-          unnumTarget: true
-        });
-        continue;   // handled — skip the normal scarcer-target path for this tRun
-      }
-
-      const looserRuns = runs.filter(r => r > tRun);   // strictly looser than target
-
-      let anchorRun = null, anchorStat = null, substituted = false;
-      let scarcityRatio, parityMult, parityPrice, pctBelow;
-
-      if (anchorSel === "ANY"){
-        // STRICT: the target must beat EVERY looser tier on a scarcity basis. Evaluate parity against
-        // all qualifying looser tiers and keep the SMALLEST discount (the hardest bar). EXCLUDE the
-        // unnumbered base — it's a fundamentally more common card, not a real substitute for a numbered
-        // parallel, and its dirt-cheap parity would wrongly disqualify every scarce-card flag.
-        let worstCase = null;   // smallest pctBelow across all NUMBERED anchors = the toughest test
-        for (const r of looserRuns){
-          if (r >= UNNUM_AS) continue;   // numbered anchors only
-          const st = tierStat(tiers[r]);
-          if (!st) continue;
-          const pm = parityMultiple(r, tRun);
-          const pp = st.med * pm;
-          const pct = Math.round((1 - tStat.low/pp) * 100);
-          if (worstCase === null || pct < worstCase.pct){
-            worstCase = { run:r, st, pm, pp, pct, ratio: r/tRun };
-          }
-        }
-        if (!worstCase) continue;   // no numbered looser tier at all → can't judge
-        anchorRun = worstCase.run; anchorStat = worstCase.st;
-        scarcityRatio = worstCase.ratio; parityMult = worstCase.pm;
-        parityPrice = worstCase.pp; pctBelow = worstCase.pct;
-      } else {
-        const want = +anchorSel;
-        if (want <= tRun) continue;   // anchor must be looser than target
-        if (tierStat(tiers[want])){ anchorRun = want; anchorStat = tierStat(tiers[want]); }
-        else {
-          // FALLBACK: nearest looser NUMBERED tier within ~2.5x the requested run, flagged substitute.
-          // Never jump to unnumbered when a numbered anchor was requested.
-          const maxAnchorRun = want * 2.5;
-          const candidates = looserRuns
-            .filter(r => r !== want && r < UNNUM_AS && r <= maxAnchorRun)
-            .map(r=>({r, d:Math.abs(r-want), st:tierStat(tiers[r])}))
-            .filter(c=>c.st);
-          candidates.sort((a,b)=> a.d - b.d || a.r - b.r);
-          if (candidates.length){ anchorRun = candidates[0].r; anchorStat = candidates[0].st; substituted = true; }
-        }
-        if (!anchorStat) continue;
-        scarcityRatio = anchorRun / tRun;
-        parityMult = parityMultiple(anchorRun, tRun);
-        parityPrice = anchorStat.med * parityMult;
-        pctBelow = Math.round((1 - tStat.low/parityPrice) * 100);
-      }
-      if (pctBelow < minDisc) continue;
-      const looserOwnDisc = anchorStat.med ? Math.round((1 - anchorStat.low/anchorStat.med)*100) : 0;
-      flags.push({
-        player: silo.player, key, tRun, tStat, anchorRun, anchorStat, substituted,
-        scarcityRatio, parityMult, parityPrice, pctBelow, looserOwnDisc
-      });
-    }
-  }
-  // best flag per target card
-  const bestPer = {};
-  for (const f of flags){ const k = f.key + " #" + f.tRun; if (!bestPer[k] || f.pctBelow > bestPer[k].pctBelow) bestPer[k] = f; }
-  const all = Object.values(bestPer).sort((a,b)=> b.pctBelow - a.pctBelow);
-
-  const diag = `<div class="small" style="background:#f7f8fa;border:1px solid #eceef2;border-radius:6px;padding:6px 10px;margin-bottom:8px">
-    📐 Median-anchored rarity^${SCARCITY_EXP}. ${anchorSel==="ANY"?"Must beat ALL numbered tiers (unnum excluded)":"/"+anchorSel+" anchor"} → ${targetSel==="ANY"?"any scarcer":"/"+targetSel}${playerSel!=="ALL"?" · "+esc(playerSel):""}.
-    <b>${all.length}</b> cards ≥${minDisc}% below parity. ⚠️ = substitute anchor used.</div>`;
-
-  if (!all.length){
-    // DIAGNOSTIC: when a specific player is selected, show exactly what silos/tiers exist for them,
-    // so a "no match" is explainable (split silos, missing anchor, thin tiers) rather than mysterious.
-    let dump = "";
-    if (playerSel !== "ALL"){
-      const pSilos = Object.entries(silos).filter(([k,s]) => s.player === playerSel);
-      if (pSilos.length){
-        dump = `<div class="small" style="margin-top:8px;color:#475467"><b>What the scanner sees for ${esc(playerSel)}:</b><br>` +
-          pSilos.map(([k,s]) => {
-            const [pl, yr, prod, au] = k.split(" | ");
-            const tierStr = Object.entries(s.tiers).sort((a,b)=>+a[0]-+b[0])
-              .map(([run, arr]) => `${run>=UNNUM_AS?"unnum":"/"+run}(${arr.length}, low $${Math.min(...arr.map(x=>x.cost)).toFixed(2)})`).join(", ");
-            return `&nbsp;&nbsp;<b>${yr} ${esc(prod)} ${au}</b>: ${tierStr}`;
-          }).join("<br>") +
-          `<br><br>Each line is a separate silo. A /50 and its anchor must be on the SAME line (same year+product+auto) to compare. Anchor tiers now form on 1+ listing (thin anchors are tagged).</div>`;
-      } else {
-        dump = `<div class="small" style="margin-top:8px;color:#b54708">No silos found for ${esc(playerSel)} at all — likely a stale scan (re-run a fresh scan) or the player's cards parsed into an unexpected product.</div>`;
-      }
-    }
-    el.innerHTML = diag + `<p class="small">No cards match this anchor→target at ≥${minDisc}% below parity. Try "Any", a different tier, or lower the slider.</p>` + dump;
-    return;
-  }
-  el.innerHTML = diag + `<table><tr><th>Target card (the buy)</th><th>Price</th><th>vs anchor tier</th><th>Parity</th></tr>` +
-    all.slice(0,250).map(f => {
-      const [player, year, product] = f.key.split(" | ");
-      const runLbl = f.tRun >= UNNUM_AS ? "unnum auto" : "/"+f.tRun;
-      const anchorLbl = f.anchorRun >= UNNUM_AS ? "unnum" : "/"+f.anchorRun;
-      const link = f.tStat.lowObj.url ? `<a href="${f.tStat.lowObj.url}" target="_blank">$${f.tStat.low.toFixed(2)} →</a>` : `$${f.tStat.low.toFixed(2)}`;
-      const fire = f.pctBelow >= 25 ? '🔥 ' : '';
-      const thin = f.tStat.n < 2 ? ' <span class="small" style="color:#b54708">· 1 listing</span>' : '';
-      const sub = f.substituted ? ` <span class="small" style="color:#b54708">⚠️ substitute anchor (no /${(document.getElementById("arbAnchor")||{}).value} listed)</span>` : '';
-      const thinAnchor = (f.anchorStat && f.anchorStat.n < 2) ? ` <span class="small" style="color:#b54708">· anchor is 1 listing</span>` : '';
-      const dbl = f.looserOwnDisc >= 15 ? `<div class="small" style="color:#1a6e32">⭐ double-deal: the ${anchorLbl} anchor is itself ${f.looserOwnDisc}% below its median</div>` : '';
-      return `<tr>
-        <td>${fire}<b>${esc(player)}</b> ${year} ${esc(product)} <b>${runLbl}</b> ${f.tStat.auto?'<span class="small">auto</span>':''}${thin}
-          <div class="small">${esc(f.tStat.lowObj.title||"").slice(0,70)}</div>${dbl}</td>
-        <td class="price">${link}</td>
-        <td>${f.unnumTarget
-            ? `vs scarcer <b>${anchorLbl}</b> (med $${f.anchorStat.med.toFixed(2)}) — an unnum auto should trade ~${(1/f.parityMult).toFixed(2)}x of it${thinAnchor}<div class="small" style="color:#b54708">⚠️ leans on the ~/${UNNUM_AS} supply guess — indicative</div>`
-            : `<span class="disc-good">${f.scarcityRatio.toFixed(1)}x rarer</span> than ${anchorLbl} (med $${f.anchorStat.med.toFixed(2)})${sub}${thinAnchor}<div class="small">expected ${f.parityMult.toFixed(2)}x vs median (rarity^${SCARCITY_EXP})</div>`
-        }</td>
-        <td><b>${f.pctBelow}% below</b><div class="small">parity ~$${f.parityPrice.toFixed(2)}</div></td>
-      </tr>`;
-    }).join("") + "</table>";
-}
-
-function renderStrong(rows, hidden){
-  const el = document.getElementById("arbResults");
-  const note = hidden ? `<p class="small">🚫 ${hidden} unlicensed / unrecognized listing(s) hidden (Leaf, Panini, in-person, off-brand).</p>` : "";
-  // show the live discount filter control once we have results
-  const wrap = document.getElementById("discFilterWrap");
-  if (wrap) wrap.style.display = rows.length ? "flex" : "none";
-  if (!rows.length) { el.innerHTML = note + `<p class="small">No below-market buys in this scan. (Cheapest listings are at or above where each card's market sits.)</p>`; return; }
-  // apply the live discount BAND (dual slider), then cap at 100
-  const minEl = document.getElementById("discMin"), maxEl = document.getElementById("discMax");
-  const lo = (minEl ? +minEl.value : 10) / 100;
-  const hiRaw = maxEl ? +maxEl.value : 80;
-  const hi = hiRaw >= 80 ? Infinity : hiRaw / 100;   // 80 = "80%+", no upper bound
-  const filtered = rows.filter(r => r.disc >= lo && r.disc <= hi);
-  const shown = filtered.slice(0,100);
-  // update the count readout
-  const cntEl = document.getElementById("discFilterCount");
-  if (cntEl){
-    const bandTxt = hi===Infinity ? `≥ ${(lo*100).toFixed(0)}%` : `${(lo*100).toFixed(0)}–${(hi*100).toFixed(0)}%`;
-    cntEl.textContent = `${filtered.length} cards ${bandTxt} off` + (filtered.length>100 ? ` (showing top 100)` : ``);
-  }
-  if (!shown.length){
-    const bandTxt = hi===Infinity ? `≥ ${(lo*100).toFixed(0)}%` : `${(lo*100).toFixed(0)}–${(hi*100).toFixed(0)}%`;
-    el.innerHTML = note + `<p class="small">No cards in the ${bandTxt} discount band. Widen the range.</p>`; return;
-  }
-  el.innerHTML = note + `<table><tr><th></th><th>Card / Cheapest Listing</th><th>Price</th><th>vs Market (today)</th><th>Tilt → 12mo Fwd</th><th>Seller</th></tr>` +
-    shown.map(r => {
-      const lab = dealLabel(r.disc);
-      return itemRow(r.item, `<td>
-        <span class="deal ${lab.cls}">${lab.txt}</span> <span class="disc-good">${(r.disc*100).toFixed(0)}% below</span>${edgeDiscChip(r.fmv, totalCost(r.item), r.item.player)} ${trendChip(r.key)}
-        <div class="small">FMV $${r.fmv.toFixed(2)} (${r.src}) · range $${r.lo.toFixed(2)}–$${r.hi.toFixed(2)} · ${r.count} listed</div></td>
-        <td>${tiltCell(r.tilt, r.fwd, r.fmv)}${driftCell(r.key, r.fmv, r.item.player)}</td>`);
-    }).join("") + "</table>";
-}
-
-// dual-range discount band — re-renders stored strong rows within [min,max] (no re-scan)
-function onDiscFilter(which){
-  const minEl = document.getElementById("discMin");
-  const maxEl = document.getElementById("discMax");
-  let lo = +minEl.value, hi = +maxEl.value;
-  // prevent the handles from crossing (keep at least 1% apart)
-  if (lo > hi - 1){
-    if (which === "min"){ lo = hi - 1; minEl.value = lo; }
-    else { hi = lo + 1; maxEl.value = hi; }
-  }
-  const valEl = document.getElementById("discFilterVal");
-  if (valEl) valEl.textContent = `${lo}% – ${hi>=80?"80%+":hi+"%"}`;
-  if (window.lastStrongRows) renderStrong(window.lastStrongRows, 0);
-}
-
-function resetDiscFilter(){
-  const minEl = document.getElementById("discMin");
-  const maxEl = document.getElementById("discMax");
-  if (minEl) minEl.value = 10;
-  if (maxEl) maxEl.value = 80;
-  onDiscFilter("max");
-}
-
-function renderRadar(rows){
-  const el = document.getElementById("fmvResults");
-  if (!rows.length) { el.innerHTML = `<p class="small">Nothing on the radar this scan.</p>`; return; }
-  el.innerHTML = `<table><tr><th></th><th>Card / Cheapest Listing</th><th>Price</th><th>Status (today)</th><th>Tilt → 12mo Fwd</th><th>Seller</th></tr>` +
-    rows.slice(0,30).map(r => {
-      let status;
-      if (r.thin) {
-        status = `<span class="deal d-fair">thin · ${r.count} listed</span>
-          <div class="small">no reliable market median — set your own FMV below</div>`;
-      } else {
-        const lab = dealLabel(r.disc);
-        status = `<span class="deal ${lab.cls}">${lab.txt}</span>
-          <div class="small">FMV $${r.fmv.toFixed(2)} (${r.src}) · range $${r.lo.toFixed(2)}–$${r.hi.toFixed(2)} · ${r.count} listed</div>`;
-      }
-      return itemRow(r.item, `<td>${status}</td><td>${tiltCell(r.tilt, r.fwd, r.fmv)}${driftCell(r.key, r.fmv, r.item.player)}</td>`);
-    }).join("") + "</table>";
-}
-
-function renderFmvTable(groups){
-  const el = document.getElementById("fmvTable");
-  const keys = Object.keys(groups).sort();
-  if (!keys.length) { el.innerHTML = `<p class="small">Scan first — licensed card identities will appear here.</p>`; return; }
-  el.innerHTML = `<table><tr><th>Card Identity</th><th>Listings</th><th>Lowest Ask</th><th>Market (median)</th><th>Your FMV $ (override)</th></tr>` +
-    keys.map(k => {
-      const list = groups[k];
-      const costs = list.map(totalCost);
-      const low = Math.min(...costs);
-      let fmvCell;
-      if (list.length >= 3)      fmvCell = `<b>$${median(costs).toFixed(2)}</b>`;
-      else if (list.length === 2) fmvCell = `$${median(costs).toFixed(2)} <span style="color:#98a2b3;font-size:10px">(2)</span>`;
-      else                        fmvCell = `<span style="color:#98a2b3">~$${low.toFixed(2)} <span style="font-size:10px">est·1</span></span>`;
-      return `<tr><td class="small">${esc(k)} ${trendChip(k)}</td><td>${list.length}</td>
-        <td class="price">$${low.toFixed(2)}</td>
-        <td class="small">${fmvCell}</td>
-        <td><input class="fmv-input" type="number" placeholder="set" value="${fmvBook[k]??""}"
-             onchange="setFmv('${k.replace(/'/g,"\\'")}', this.value)"></td></tr>`;
-    }).join("") + "</table>";
-}
-function setFmv(key, val){
-  if (val === "" || +val <= 0) delete fmvBook[key]; else fmvBook[key] = +val;
-  save("cs_fmv", fmvBook);
-  processResults();
-}
-
-function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function esc(s){ return (""+s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 </script>
 </body>
 </html>
